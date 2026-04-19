@@ -34,6 +34,25 @@ Required workflow:
 6. extract in quarantine first
 7. move validated data into local working directories only after inspection
 
+### Current Upstream Archive
+
+Current upstream data path:
+- URL: `https://s3.jbecker.dev/data.tar.zst`
+- advertised compressed size: approximately `36 GiB`
+- expected extracted root: `data/`
+- expected primary subdirectories: `data/kalshi/` and `data/polymarket/`
+
+Current upstream behavior to avoid:
+- auto-extracting directly into the working tree
+- auto-deleting the source archive immediately after extraction
+
+Preferred local workflow:
+- download to a quarantine location
+- run `uv run main.py data-verify <archive>`
+- record the SHA-256 in this document or an operator log
+- inspect top-level paths
+- only then extract in an isolated location
+
 ## Extraction Checklist
 
 - top-level paths match expectation

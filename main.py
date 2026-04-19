@@ -173,6 +173,7 @@ def data_verify(path: str | None = None):
 
     print("\nArchive verification report:\n")
     print(f"path: {result.path}")
+    print(f"archive_format: {result.archive_format}")
     print(f"sha256: {result.sha256}")
     print(f"member_count: {result.member_count}")
     print(f"top_level_entries: {', '.join(result.top_level_entries) if result.top_level_entries else '(none)'}")

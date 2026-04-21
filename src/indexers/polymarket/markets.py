@@ -7,10 +7,11 @@ from pathlib import Path
 import pandas as pd
 
 from src.common.indexer import Indexer
+from src.common.paths import data_path
 from src.indexers.polymarket.client import PolymarketClient
 
-DATA_DIR = Path("data/polymarket/markets")
-OFFSET_FILE = Path("data/polymarket/.backfill_offset")
+DATA_DIR = data_path("polymarket", "markets")
+OFFSET_FILE = data_path("polymarket", ".backfill_offset")
 CHUNK_SIZE = 10000
 
 

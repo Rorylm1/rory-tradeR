@@ -1,0 +1,49 @@
+{
+  "marketId": "1.234567890",
+  "marketName": "Match Odds",
+  "marketStartTime": "2025-06-15T14:00:00.000Z",
+  "description": {
+    "marketType": "MATCH_ODDS",
+    "marketStatus": "OPEN",
+    "turnInPlayEnabled": true,
+    "bspMarket": false,
+    "bettingType": "ODDS"
+  },
+  "competition": {
+    "id": "12345",
+    "name": "Premier League"
+  },
+  "event": {
+    "id": "67890",
+    "name": "Arsenal v Chelsea",
+    "countryCode": "GB",
+    "timezone": "GMT",
+    "venue": "Emirates Stadium",
+    "openDate": "2025-06-15T14:00:00.000Z"
+  },
+  "eventType": {
+    "id": "1",
+    "name": "Soccer"
+  },
+  "runners": [
+    {
+      "selectionId": 1001,
+      "runnerName": "Arsenal",
+      "handicap": 0.0,
+      "sortPriority": 1
+    },
+    {
+      "selectionId": 1002,
+      "runnerName": "Chelsea",
+      "handicap": 0.0,
+      "sortPriority": 2
+    },
+    {
+      "selectionId": 1003,
+      "runnerName": "The Draw",
+      "handicap": 0.0,
+      "sortPriority": 3
+    }
+  ],
+  "totalMatched": 125000.50
+}

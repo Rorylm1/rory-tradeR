@@ -1,0 +1,64 @@
+{
+  "markets": [
+    {
+      "id": "sm-market-12345",
+      "event_id": "sm-event-67890",
+      "name": "Match Winner",
+      "slug": "match-winner",
+      "type": "winner",
+      "state": "live",
+      "inplay_enabled": true,
+      "live": false,
+      "winner_count": 1,
+      "bet_delay": 5,
+      "display_order": 1,
+      "created": "2025-06-01T10:00:00Z",
+      "modified": "2025-06-14T12:00:00Z",
+      "event": {
+        "id": "sm-event-67890",
+        "name": "Arsenal vs Chelsea",
+        "type": "football_match",
+        "state": "upcoming",
+        "start_datetime": "2025-06-15T14:00:00Z",
+        "parent_id": "sm-competition-111",
+        "full_slug": "football/england/premier-league/arsenal-vs-chelsea"
+      },
+      "contracts": [
+        {
+          "id": "sm-contract-001",
+          "name": "Arsenal",
+          "slug": "arsenal",
+          "type": "binary",
+          "state": "live",
+          "display_order": 1,
+          "created": "2025-06-01T10:00:00Z",
+          "modified": "2025-06-14T12:00:00Z"
+        },
+        {
+          "id": "sm-contract-002",
+          "name": "Chelsea",
+          "slug": "chelsea",
+          "type": "binary",
+          "state": "live",
+          "display_order": 2,
+          "created": "2025-06-01T10:00:00Z",
+          "modified": "2025-06-14T12:00:00Z"
+        },
+        {
+          "id": "sm-contract-003",
+          "name": "Draw",
+          "slug": "draw",
+          "type": "binary",
+          "state": "live",
+          "display_order": 3,
+          "created": "2025-06-01T10:00:00Z",
+          "modified": "2025-06-14T12:00:00Z"
+        }
+      ]
+    }
+  ],
+  "pagination": {
+    "next_page": null,
+    "total_count": 1
+  }
+}

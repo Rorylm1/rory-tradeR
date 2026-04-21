@@ -11,6 +11,7 @@ from tqdm import tqdm
 from web3 import Web3
 
 from src.common.indexer import Indexer
+from src.common.paths import data_path
 from src.indexers.polymarket.blockchain import PolygonClient
 
 # FPMM Factory deployed at block 4023693 (around Sep 2020)
@@ -24,8 +25,8 @@ FPMM_BUY_TOPIC = "0x" + Web3.keccak(text="FPMMBuy(address,uint256,uint256,uint25
 # FPMMSell(address indexed seller, uint256 returnAmount, uint256 feeAmount, uint256 indexed outcomeIndex, uint256 outcomeTokensSold)
 FPMM_SELL_TOPIC = "0x" + Web3.keccak(text="FPMMSell(address,uint256,uint256,uint256,uint256)").hex()
 
-DATA_DIR = Path("data/polymarket/legacy_trades")
-CURSOR_FILE = Path("data/polymarket/.legacy_backfill_block_cursor")
+DATA_DIR = data_path("polymarket", "legacy_trades")
+CURSOR_FILE = data_path("polymarket", ".legacy_backfill_block_cursor")
 
 
 @dataclass

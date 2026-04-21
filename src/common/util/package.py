@@ -1,8 +1,11 @@
 import subprocess
 from pathlib import Path
+from typing import Optional
+
+from src.common.paths import get_data_root
 
 
-def package_data(data_dir: Path = Path("data"), output_path: Path = Path("data.tar.zst")) -> bool:
+def package_data(data_dir: Optional[Path] = None, output_path: Path = Path("data.tar.zst")) -> bool:
     """Package the data directory into a zstd-compressed tar archive.
 
     Args:
@@ -12,13 +15,16 @@ def package_data(data_dir: Path = Path("data"), output_path: Path = Path("data.t
     Returns:
         True if successful, False otherwise.
     """
+    data_dir = data_dir or get_data_root()
+
     if not data_dir.exists():
         print(f"Error: Data directory '{data_dir}' does not exist.")
         return False
 
     print(f"Packaging {data_dir} -> {output_path}")
     result = subprocess.run(
-        ["tar", "--zstd", "-cf", str(output_path), str(data_dir)],
+        ["tar", "--zstd", "-cf", str(output_path.resolve()), data_dir.name],
+        cwd=str(data_dir.parent),
         capture_output=True,
         text=True,
     )

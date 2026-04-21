@@ -9,6 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.common.indexer import Indexer
+from src.common.paths import data_path
 from src.indexers.polymarket.blockchain import (
     CTF_EXCHANGE,
     NEGRISK_CTF_EXCHANGE,
@@ -16,8 +17,8 @@ from src.indexers.polymarket.blockchain import (
     PolygonClient,
 )
 
-DATA_DIR = Path("data/polymarket/trades")
-CURSOR_FILE = Path("data/polymarket/.backfill_block_cursor")
+DATA_DIR = data_path("polymarket", "trades")
+CURSOR_FILE = data_path("polymarket", ".backfill_block_cursor")
 
 
 class PolymarketTradesIndexer(Indexer):

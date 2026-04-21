@@ -3,12 +3,19 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from simple_term_menu import TerminalMenu
 
 from src.common.analysis import Analysis
 from src.common.indexer import Indexer
+from src.common.paths import get_data_root
 from src.common.util import package_data
 from src.common.util.strings import snake_to_title
+from src.exchanges import BetfairAdapter
+from src.trading.data_extract import extract_archive
 from src.trading.data_verify import verify_archive
 from src.trading.doctor import run_doctor
 
@@ -137,15 +144,53 @@ def package():
 def doctor():
     """Validate exchange credentials and approval readiness."""
     print("\nDoctor report:\n")
+    data_root = get_data_root()
+    print(f"active_data_root: {data_root}")
+    print(f"data_root_exists: {'yes' if data_root.exists() else 'no'}")
     for line in run_doctor():
         print(line)
 
 
-def markets():
-    """Print current market-access status."""
-    print("\nMarkets command is currently a foundation command.")
-    print("Use `doctor` first to confirm exchange readiness.")
-    print("Normalized market polling will be layered on top of the exchange adapters next.\n")
+def markets(category: str | None = None, max_results: int = 5):
+    """Fetch and print normalized Betfair market snapshots."""
+    adapter = BetfairAdapter()
+    validation = adapter.validate_credentials()
+
+    print("\nMarkets report:\n")
+    print(f"exchange: {adapter.name}")
+    print(f"requested_category: {category or '(all)'}")
+    print(f"max_results: {max_results}")
+    print(f"auth_status: {validation.message}")
+
+    if not validation.ok:
+        print("\nUse `doctor` to review exchange readiness before retrying.\n")
+        sys.exit(1)
+
+    snapshots = adapter.list_markets(category=category, max_results=max_results)
+    if not snapshots:
+        print("\nNo markets returned for the current query.\n")
+        return
+
+    print("")
+    for snapshot in snapshots:
+        event_start = snapshot.event_start.isoformat() if snapshot.event_start else "unknown"
+        print(f"[{snapshot.category}/{snapshot.subcategory}] {snapshot.market_title}")
+        print(f"  market_id: {snapshot.market_id}")
+        print(f"  start: {event_start}")
+        print(f"  status: {snapshot.status}")
+        for selection in snapshot.selections[:3]:
+            probability = (
+                f"{selection.implied_probability:.3f}" if selection.implied_probability is not None else "n/a"
+            )
+            print(
+                "  - "
+                f"{selection.selection_name}: "
+                f"back={selection.best_back or 'n/a'} "
+                f"lay={selection.best_lay or 'n/a'} "
+                f"last={selection.last_traded or 'n/a'} "
+                f"implied={probability}"
+            )
+        print("")
 
 
 def paper():
@@ -181,10 +226,26 @@ def data_verify(path: str | None = None):
     sys.exit(1 if result.has_unsafe_paths else 0)
 
 
+def data_extract(path: str | None = None, destination: str | None = None, prefixes: list[str] | None = None):
+    """Extract selected archive prefixes into a quarantine destination."""
+    if not path or not destination:
+        print("Usage: uv run main.py data-extract <path-to-archive> <destination-dir> [prefix ...]")
+        sys.exit(1)
+
+    report = extract_archive(path, destination, prefixes or [])
+    print("\nArchive selective extraction report:\n")
+    print(f"archive_path: {report.archive_path}")
+    print(f"destination: {report.destination}")
+    print(f"prefixes: {', '.join(report.prefixes) if report.prefixes else '(all members)'}")
+    print(f"extracted_members: {report.extracted_members}")
+    print(f"skipped_members: {report.skipped_members}")
+    print(f"extracted_bytes: {report.extracted_bytes}")
+
+
 def main():
     if len(sys.argv) < 2:
         print("\nUsage: uv run main.py <command>")
-        print("Commands: analyze, index, package, doctor, markets, paper, replay, data-verify")
+        print("Commands: analyze, index, package, doctor, markets, paper, replay, data-verify, data-extract")
         sys.exit(0)
 
     command = sys.argv[1]
@@ -207,7 +268,9 @@ def main():
         sys.exit(0)
 
     if command == "markets":
-        markets()
+        category = sys.argv[2] if len(sys.argv) > 2 else None
+        max_results = int(sys.argv[3]) if len(sys.argv) > 3 else 5
+        markets(category=category, max_results=max_results)
         sys.exit(0)
 
     if command == "paper":
@@ -223,8 +286,15 @@ def main():
         data_verify(path)
         sys.exit(0)
 
+    if command == "data-extract":
+        path = sys.argv[2] if len(sys.argv) > 2 else None
+        destination = sys.argv[3] if len(sys.argv) > 3 else None
+        prefixes = sys.argv[4:] if len(sys.argv) > 4 else []
+        data_extract(path, destination, prefixes)
+        sys.exit(0)
+
     print(f"Unknown command: {command}")
-    print("Commands: analyze, index, package, doctor, markets, paper, replay, data-verify")
+    print("Commands: analyze, index, package, doctor, markets, paper, replay, data-verify, data-extract")
     sys.exit(1)
 
 

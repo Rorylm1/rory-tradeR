@@ -11,11 +11,12 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.common.indexer import Indexer
+from src.common.paths import data_path
 from src.indexers.kalshi.client import KalshiClient
 
-DATA_DIR = Path("data/kalshi/trades")
-MARKETS_DIR = Path("data/kalshi/markets")
-CURSOR_FILE = Path("data/kalshi/.backfill_trades_cursor")
+DATA_DIR = data_path("kalshi", "trades")
+MARKETS_DIR = data_path("kalshi", "markets")
+CURSOR_FILE = data_path("kalshi", ".backfill_trades_cursor")
 
 
 class KalshiTradesIndexer(Indexer):

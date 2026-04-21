@@ -52,6 +52,35 @@ Preferred local workflow:
 - record the SHA-256 in this document or an operator log
 - inspect top-level paths
 - only then extract in an isolated location
+- if disk is constrained, use selective extraction into a quarantine subdirectory instead of full extraction
+
+Active data-root behavior:
+- the repo supports an optional `RORY_TRADER_DATA_ROOT` environment variable
+- if it is unset, the code will prefer `runtime/quarantine/extracted-lite/data` when that location contains a dataset and the repo `data/` directory does not
+- this allows safe use of the verified quarantine subset without copying it into the live repo data path
+
+Verified archive on `2026-04-19`:
+- archive path: `runtime/quarantine/data.tar.zst`
+- sha256: `0be77ff1eae2e8c0fa962bbb1fdf7c26522a7bf19cb627cfb19d26388b71a920`
+- archive format: `tar.zst`
+- member count: `78,739`
+- top-level entries: `data`
+- unsafe paths detected: `no`
+
+Selective extraction performed on `2026-04-19`:
+- destination: `runtime/quarantine/extracted-lite`
+- extracted prefixes:
+  - `data/kalshi`
+  - `data/polymarket/blocks`
+  - `data/polymarket/markets`
+  - `data/polymarket/legacy_trades`
+  - `data/polymarket/fpmm_collateral_lookup.json`
+- skipped on purpose:
+  - `data/polymarket/trades`
+- reason for selective extraction:
+  - full uncompressed archive size is about `49.9 GiB`
+  - available disk at extraction time was about `42 GiB`
+  - `data/polymarket/trades` alone is about `44.9 GiB`
 
 ## Extraction Checklist
 

@@ -4,11 +4,12 @@ from pathlib import Path
 from typing import Optional
 
 from src.common.indexer import Indexer
+from src.common.paths import data_path
 from src.common.storage import ParquetStorage
 from src.indexers.kalshi.client import KalshiClient
 
-DATA_DIR = Path("data/kalshi/markets")
-CURSOR_FILE = Path("data/kalshi/.backfill_cursor")
+DATA_DIR = data_path("kalshi", "markets")
+CURSOR_FILE = data_path("kalshi", ".backfill_cursor")
 
 
 class KalshiMarketsIndexer(Indexer):

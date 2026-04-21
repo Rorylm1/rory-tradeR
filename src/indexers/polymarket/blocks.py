@@ -11,10 +11,11 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.common.indexer import Indexer
+from src.common.paths import data_path
 from src.indexers.polymarket.blockchain import PolygonClient
 
 POLYGON_RPC = os.getenv("POLYGON_RPC", "")
-BLOCKS_DIR = Path("data/polymarket/blocks")
+BLOCKS_DIR = data_path("polymarket", "blocks")
 
 BUCKET_SIZE = 100_000  # 100k blocks per file
 SAMPLE_INTERVAL = 100  # Fetch every 100th block, interpolate the rest

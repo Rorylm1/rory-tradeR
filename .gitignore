@@ -2,6 +2,11 @@
 .env
 .env.local
 .env.*.local
+*.crt
+*.key
+*.pem
+*.p12
+*.pfx
 
 # Python-generated files
 __pycache__/
@@ -36,3 +41,4 @@ runtime/*
 *.log
 *.journal.jsonl
 *.snapshot.json
+.gstack/

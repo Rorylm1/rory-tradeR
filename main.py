@@ -1,23 +1,29 @@
 from __future__ import annotations
 
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
-
-load_dotenv()
-
 from simple_term_menu import TerminalMenu
 
 from src.common.analysis import Analysis
 from src.common.indexer import Indexer
-from src.common.paths import get_data_root
+from src.common.paths import get_data_root, get_runtime_root, runtime_path
 from src.common.util import package_data
 from src.common.util.strings import snake_to_title
 from src.exchanges import BetfairAdapter
 from src.trading.data_extract import extract_archive
 from src.trading.data_verify import verify_archive
 from src.trading.doctor import run_doctor
+from src.trading.journal import JournalStore, journal_performance_summary
+from src.trading.market_history import save_market_snapshots
+from src.trading.paper_broker import PaperBroker
+from src.trading.research import inherited_market_priors
+from src.trading.strategy import BackPriceBucketStrategy
+
+load_dotenv()
 
 
 def analyze(name: str | None = None):
@@ -145,8 +151,13 @@ def doctor():
     """Validate exchange credentials and approval readiness."""
     print("\nDoctor report:\n")
     data_root = get_data_root()
+    runtime_root = get_runtime_root()
     print(f"active_data_root: {data_root}")
     print(f"data_root_exists: {'yes' if data_root.exists() else 'no'}")
+    print(f"active_runtime_root: {runtime_root}")
+    print(f"runtime_root_exists: {'yes' if runtime_root.exists() else 'no'}")
+    print(f"live_enabled: {os.getenv('RORY_TRADER_LIVE_ENABLED', 'false').lower()}")
+    print(f"journal_path: {runtime_path('journals', 'trading_journal.jsonl')}")
     for line in run_doctor():
         print(line)
 
@@ -193,16 +204,148 @@ def markets(category: str | None = None, max_results: int = 5):
         print("")
 
 
-def paper():
-    """Paper-trading placeholder command for milestone one."""
-    print("\nPaper mode is enabled by design.")
-    print("The paper broker foundation is present, but no live exchange execution is allowed.\n")
+def paper(category: str = "sports", max_results: int = 25):
+    """Collect snapshots, emit strategy proposals, and simulate paper fills."""
+    adapter = BetfairAdapter()
+    validation = adapter.validate_credentials()
+
+    print("\nPaper report:\n")
+    print(f"exchange: {adapter.name}")
+    print(f"category: {category}")
+    print(f"max_results: {max_results}")
+    print(f"auth_status: {validation.message}")
+
+    if not validation.ok:
+        print("\nUse `doctor` to review exchange readiness before retrying.\n")
+        sys.exit(1)
+
+    captured_at = datetime.now(timezone.utc)
+    snapshots = adapter.list_markets(category=category, max_results=max_results)
+    for snapshot in snapshots:
+        snapshot.captured_at = captured_at
+        for selection in snapshot.selections:
+            selection.captured_at = captured_at
+
+    snapshot_path = save_market_snapshots(snapshots, captured_at=captured_at)
+    strategy = BackPriceBucketStrategy()
+    broker = PaperBroker()
+    journal = JournalStore()
+
+    if snapshot_path is not None:
+        journal.record_snapshot_collection(snapshot_path, len(snapshots), category)
+
+    proposals = 0
+    duplicates = 0
+    paper_fills = 0
+
+    for signal in strategy.evaluate(snapshots):
+        snapshot = next((item for item in snapshots if item.market_id == signal.market_id), None)
+        if snapshot is None:
+            continue
+
+        proposal = journal.record_proposal(signal, snapshot)
+        if proposal is None:
+            duplicates += 1
+            continue
+
+        proposals += 1
+        order_intent = strategy.to_order_intent(signal)
+        report = broker.execute(order_intent, snapshot)
+        journal.record_execution(proposal.proposal_id, report, mode="paper")
+        if report.accepted:
+            paper_fills += 1
+
+    print(f"snapshot_path: {snapshot_path}")
+    print(f"snapshots_collected: {len(snapshots)}")
+    print(f"strategy: {strategy.definition.name}@{strategy.definition.version}")
+    print(f"proposals_created: {proposals}")
+    print(f"duplicate_proposals_skipped: {duplicates}")
+    print(f"paper_fills_created: {paper_fills}")
+    print(f"journal_path: {journal.path}\n")
 
 
 def replay():
     """Replay placeholder command for milestone one."""
     print("\nReplay mode will use saved snapshots only.")
     print("No live exchange calls should happen in replay mode.\n")
+
+
+def research_priors():
+    """Summarize inherited market-behavior priors from the Becker dataset."""
+    print("\nInherited market priors:\n")
+    df = inherited_market_priors()
+    if df.empty:
+        print("No inherited priors available from the local dataset.\n")
+        return
+
+    print(f"rows: {len(df)}")
+    print("")
+    for _, row in df.head(12).iterrows():
+        print(
+            f"bucket={int(row['price_bucket_start']):02d}-{int(row['price_bucket_end']):02d}c "
+            f"trades={int(row['trades'])} "
+            f"implied={row['avg_implied_probability']:.3f} "
+            f"actual={row['actual_win_rate']:.3f} "
+            f"gap={row['calibration_gap']:+.3f}"
+        )
+    print("")
+
+
+def journal_report():
+    """Print strategy/journal performance summaries."""
+    print("\nJournal report:\n")
+    summary = journal_performance_summary()
+    if summary["events"].empty:
+        print(f"No journal events found at {runtime_path('journals', 'trading_journal.jsonl')}.\n")
+        return
+
+    print(f"journal_events: {len(summary['events'])}")
+    print(f"strategy_groups: {len(summary['strategy'])}")
+    print("")
+
+    print("Strategy performance:")
+    if summary["strategy"].empty:
+        print("  (none)")
+    else:
+        for _, row in summary["strategy"].iterrows():
+            print(
+                "  "
+                f"{row['strategy_name']}@{row['strategy_version']}: "
+                f"proposals={int(row['proposals'])} "
+                f"accepted={int(row['accepted_trades'])} "
+                f"avg_confidence={row['avg_confidence']:.3f} "
+                f"total_stake={row['total_stake']:.2f} "
+                f"total_cost={row['total_cost']:.2f}"
+            )
+    print("")
+
+    print("Price bucket performance:")
+    if summary["price_bucket"].empty:
+        print("  (none)")
+    else:
+        for _, row in summary["price_bucket"].iterrows():
+            print(
+                "  "
+                f"{row['price_bucket']}: "
+                f"proposals={int(row['proposals'])} "
+                f"accepted={int(row['accepted_trades'])} "
+                f"total_cost={row['total_cost']:.2f}"
+            )
+    print("")
+
+    print("Time-to-event performance:")
+    if summary["time_window"].empty:
+        print("  (none)")
+    else:
+        for _, row in summary["time_window"].iterrows():
+            print(
+                "  "
+                f"{row['time_window']}: "
+                f"proposals={int(row['proposals'])} "
+                f"accepted={int(row['accepted_trades'])} "
+                f"total_cost={row['total_cost']:.2f}"
+            )
+    print("")
 
 
 def data_verify(path: str | None = None):
@@ -245,7 +388,10 @@ def data_extract(path: str | None = None, destination: str | None = None, prefix
 def main():
     if len(sys.argv) < 2:
         print("\nUsage: uv run main.py <command>")
-        print("Commands: analyze, index, package, doctor, markets, paper, replay, data-verify, data-extract")
+        print(
+            "Commands: analyze, index, package, doctor, markets, paper, replay, "
+            "data-verify, data-extract, research-priors, journal-report"
+        )
         sys.exit(0)
 
     command = sys.argv[1]
@@ -274,7 +420,9 @@ def main():
         sys.exit(0)
 
     if command == "paper":
-        paper()
+        category = sys.argv[2] if len(sys.argv) > 2 else "sports"
+        max_results = int(sys.argv[3]) if len(sys.argv) > 3 else 25
+        paper(category=category, max_results=max_results)
         sys.exit(0)
 
     if command == "replay":
@@ -293,8 +441,19 @@ def main():
         data_extract(path, destination, prefixes)
         sys.exit(0)
 
+    if command == "research-priors":
+        research_priors()
+        sys.exit(0)
+
+    if command == "journal-report":
+        journal_report()
+        sys.exit(0)
+
     print(f"Unknown command: {command}")
-    print("Commands: analyze, index, package, doctor, markets, paper, replay, data-verify, data-extract")
+    print(
+        "Commands: analyze, index, package, doctor, markets, paper, replay, "
+        "data-verify, data-extract, research-priors, journal-report"
+    )
     sys.exit(1)
 
 

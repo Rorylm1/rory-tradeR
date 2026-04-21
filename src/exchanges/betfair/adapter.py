@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from typing import Optional
 
 import httpx
 
@@ -26,9 +25,9 @@ class BetfairAdapter(ExchangeAdapter):
         self.cert_identity_url = "https://identitysso-cert.betfair.com/api/certlogin"
         self.interactive_identity_url = "https://identitysso.betfair.com/api/login"
         self.api_url = "https://api.betfair.com/exchange/betting/json-rpc/v1"
-        self._session_token: Optional[str] = None
+        self._session_token: str | None = None
 
-    def _event_type_ids_for_category(self, category: Optional[str]) -> list[str]:
+    def _event_type_ids_for_category(self, category: str | None) -> list[str]:
         if not category:
             return []
 
@@ -179,12 +178,13 @@ class BetfairAdapter(ExchangeAdapter):
             message=f"Betfair login status: {login_status} (mode: {login_mode})",
         )
 
-    def list_markets(self, category: Optional[str] = None, max_results: int = 10) -> list[MarketSnapshot]:
+    def list_markets(self, category: str | None = None, max_results: int = 10) -> list[MarketSnapshot]:
         self._ensure_session_token()
+        captured_at = datetime.now(timezone.utc)
 
         market_filter: dict[str, object] = {
             "marketStartTime": {
-                "from": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                "from": captured_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
             }
         }
         event_type_ids = self._event_type_ids_for_category(category)
@@ -222,7 +222,11 @@ class BetfairAdapter(ExchangeAdapter):
 
         snapshots = []
         for market in catalogue:
-            snapshots.append(self.normalize_market(market, books_by_market_id.get(market.get("marketId"))))
+            snapshot = self.normalize_market(market, books_by_market_id.get(market.get("marketId")))
+            snapshot.captured_at = captured_at
+            for selection in snapshot.selections:
+                selection.captured_at = captured_at
+            snapshots.append(snapshot)
         return snapshots
 
     def build_order_quote(self, order_intent: OrderIntent) -> OrderQuote:
@@ -238,7 +242,7 @@ class BetfairAdapter(ExchangeAdapter):
         )
 
     @staticmethod
-    def normalize_market(raw_market: dict, raw_book: Optional[dict] = None) -> MarketSnapshot:
+    def normalize_market(raw_market: dict, raw_book: dict | None = None) -> MarketSnapshot:
         """
         Normalize Betfair market catalogue and book data into a MarketSnapshot.
 
@@ -262,6 +266,10 @@ class BetfairAdapter(ExchangeAdapter):
         event_type = raw_market.get("eventType", {})
         event_type_id = event_type.get("id") if isinstance(event_type, dict) else None
         category, subcategory = infer_betfair_category(event_type_id)
+        event = raw_market.get("event", {})
+        competition = raw_market.get("competition", {})
+        event_name = event.get("name") if isinstance(event, dict) else None
+        competition_name = competition.get("name") if isinstance(competition, dict) else None
 
         # Normalize status
         raw_status = raw_market.get("description", {}).get("marketStatus") or raw_book.get("status")
@@ -289,6 +297,8 @@ class BetfairAdapter(ExchangeAdapter):
                     best_lay=best_lay,
                     last_traded=last_traded,
                     status=status,
+                    event_name=event_name,
+                    competition_name=competition_name,
                     raw_payload={"catalogue": runner, "book": runner_book},
                 )
             )
@@ -302,5 +312,7 @@ class BetfairAdapter(ExchangeAdapter):
             event_start=parsed_start,
             status=status,
             selections=selections,
+            event_name=event_name,
+            competition_name=competition_name,
             raw_payload={"catalogue": raw_market, "book": raw_book},
         )

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from src.common import paths
 
 
@@ -28,3 +26,16 @@ def test_get_data_root_honors_explicit_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv(paths.DATA_ROOT_ENV_VAR, "custom-data")
 
     assert paths.get_data_root() == configured.resolve()
+
+
+def test_get_runtime_root_honors_explicit_env_override(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    configured = repo_root / "custom-runtime"
+    configured.mkdir()
+
+    monkeypatch.setattr(paths, "REPO_ROOT", repo_root)
+    monkeypatch.setattr(paths, "DEFAULT_RUNTIME_ROOT", repo_root / "runtime")
+    monkeypatch.setenv(paths.RUNTIME_ROOT_ENV_VAR, "custom-runtime")
+
+    assert paths.get_runtime_root() == configured.resolve()

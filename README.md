@@ -5,9 +5,10 @@
 
 It keeps the upstream Python/`uv`/DuckDB research structure and extends it with:
 - secure historical-data ingestion workflows
-- Betfair exchange access and normalization
-- Smarkets integration scaffolding with approval-aware gating
-- paper-trading infrastructure, replay, and execution journaling
+- inherited Kalshi/Polymarket research priors
+- Betfair exchange access, snapshot collection, and normalization
+- paper-trading proposals, execution journaling, and review commands
+- a manual-assisted live-trading path that stays gated until paper results justify it
 
 This repository is deliberately separate from the art app and other side projects. Its local home is:
 
@@ -31,16 +32,17 @@ The original upstream focus was:
 `rory-tradeR` changes the project direction in three important ways:
 
 1. it treats the repo as a trading-research system rather than a pure analysis repo
-2. it adds exchange-access abstractions for Betfair and Smarkets
-3. it keeps the first milestone strictly limited to paper trading with strong safety defaults
+2. it uses inherited Kalshi/Polymarket history as a research template rather than a direct execution signal
+3. it makes Betfair the primary execution venue, with paper and live trading gated by strict safety defaults
 
 ## Current Scope
 
 Current milestone goals:
 - preserve the upstream codebase and provenance
 - document and secure the upstream dataset ingestion path
-- add account-validation and market-data access layers for Betfair and Smarkets
-- add paper-trading commands and journaling
+- collect and normalize Betfair market snapshots
+- generate versioned paper-trading proposals and journal them durably
+- review strategy performance before any tiny live trading is considered
 
 Explicit non-goals for the first milestone:
 - no live-money order placement
@@ -80,14 +82,18 @@ Trading-foundation commands added in this repo:
 uv run main.py doctor
 uv run main.py data-verify /path/to/data.tar.zst
 uv run main.py markets
-uv run main.py paper
+uv run main.py paper sports 25
+uv run main.py research-priors
+uv run main.py journal-report
 uv run main.py replay
 ```
 
 Notes:
 - `doctor` checks exchange config and approval readiness
 - `data-verify` validates archive checksum and extraction shape
-- `paper` and `replay` are paper-only safety boundaries
+- `paper` collects Betfair snapshots, emits strategy proposals, and simulates paper fills
+- `research-priors` summarizes inherited Kalshi price-bucket priors
+- `journal-report` summarizes our own proposal/fill journal by strategy, price bucket, and time-to-event
 
 ## Data Safety
 
@@ -103,12 +109,12 @@ The upstream historical dataset is downloaded from an external bucket and must b
 ## Exchange Notes
 
 Betfair:
-- primary first-depth integration target
+- primary execution and learning target
 - requires valid account credentials and app access
 
 Smarkets:
-- approval-aware integration target
-- API access may require explicit approval and activation before full use
+- deferred optional expansion path
+- not part of the core trading loop right now
 
 ## Repo Guides
 

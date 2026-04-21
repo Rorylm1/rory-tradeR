@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 
 @dataclass
@@ -14,15 +13,18 @@ class SelectionSnapshot:
     selection_name: str
     category: str
     subcategory: str
-    event_start: Optional[datetime]
-    best_back: Optional[float]
-    best_lay: Optional[float]
-    last_traded: Optional[float]
+    event_start: datetime | None
+    best_back: float | None
+    best_lay: float | None
+    last_traded: float | None
     status: str
+    event_name: str | None = None
+    competition_name: str | None = None
+    captured_at: datetime | None = None
     raw_payload: dict = field(default_factory=dict)
 
     @property
-    def implied_probability(self) -> Optional[float]:
+    def implied_probability(self) -> float | None:
         if self.last_traded and self.last_traded > 0:
             return 1 / self.last_traded
         if self.best_back and self.best_back > 0:
@@ -37,9 +39,12 @@ class MarketSnapshot:
     market_title: str
     category: str
     subcategory: str
-    event_start: Optional[datetime]
+    event_start: datetime | None
     status: str
     selections: list[SelectionSnapshot]
+    event_name: str | None = None
+    competition_name: str | None = None
+    captured_at: datetime | None = None
     raw_payload: dict = field(default_factory=dict)
 
 
@@ -50,7 +55,7 @@ class OrderIntent:
     selection_id: str
     side: str
     stake: float
-    requested_price: Optional[float] = None
+    requested_price: float | None = None
     paper_only: bool = True
     reason: str = ""
 
@@ -62,7 +67,7 @@ class OrderQuote:
     selection_id: str
     side: str
     stake: float
-    estimated_price: Optional[float]
+    estimated_price: float | None
     paper_only: bool
     message: str
     raw_payload: dict = field(default_factory=dict)
@@ -86,7 +91,7 @@ class ExecutionReport:
     exchange: str
     mode: str
     message: str
-    fill: Optional[PaperFill] = None
+    fill: PaperFill | None = None
 
 
 @dataclass
@@ -101,8 +106,16 @@ class Position:
 
 @dataclass
 class StrategySignal:
+    strategy_name: str
+    strategy_version: str
     market_id: str
     selection_id: str
     side: str
     confidence: float
     reason: str
+    stake: float = 0.0
+    requested_price: float | None = None
+    snapshot_timestamp: datetime | None = None
+    event_start: datetime | None = None
+    holding_period_hours: float = 0.0
+    tags: list[str] = field(default_factory=list)

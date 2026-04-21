@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Optional
 
 from src.exchanges.common.adapter import ExchangeAdapter, ValidationResult
 from src.exchanges.common.models import MarketSnapshot, OrderIntent, OrderQuote, SelectionSnapshot
@@ -46,7 +45,7 @@ class SmarketsAdapter(ExchangeAdapter):
             message="Smarkets API appears configured. Endpoint-level validation is still conservative.",
         )
 
-    def list_markets(self, category: Optional[str] = None, max_results: int = 10) -> list[MarketSnapshot]:
+    def list_markets(self, category: str | None = None, max_results: int = 10) -> list[MarketSnapshot]:
         return []
 
     def build_order_quote(self, order_intent: OrderIntent) -> OrderQuote:
@@ -62,7 +61,7 @@ class SmarketsAdapter(ExchangeAdapter):
         )
 
     @staticmethod
-    def normalize_market(raw_market: dict, raw_quotes: Optional[dict] = None) -> MarketSnapshot:
+    def normalize_market(raw_market: dict, raw_quotes: dict | None = None) -> MarketSnapshot:
         """
         Normalize Smarkets market and quotes data into a MarketSnapshot.
 
@@ -85,6 +84,7 @@ class SmarketsAdapter(ExchangeAdapter):
         # Infer category from event slug
         full_slug = event.get("full_slug", "")
         category, subcategory = infer_smarkets_category(full_slug)
+        event_name = event.get("name")
 
         # Normalize status
         raw_status = raw_market.get("state")
@@ -126,6 +126,7 @@ class SmarketsAdapter(ExchangeAdapter):
                     best_lay=best_lay,
                     last_traded=last_traded,
                     status=normalize_status(contract.get("state"), "smarkets"),
+                    event_name=event_name,
                     raw_payload={"contract": contract, "quotes": contract_quotes},
                 )
             )
@@ -139,5 +140,6 @@ class SmarketsAdapter(ExchangeAdapter):
             event_start=parsed_start,
             status=status,
             selections=selections,
+            event_name=event_name,
             raw_payload={"market": raw_market, "quotes": raw_quotes},
         )

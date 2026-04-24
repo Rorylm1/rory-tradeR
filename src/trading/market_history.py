@@ -14,6 +14,17 @@ def snapshot_history_dir(output_dir: Path | None = None) -> Path:
     return Path(output_dir) if output_dir is not None else data_path("betfair", "snapshots")
 
 
+def latest_snapshot_path(output_dir: Path | None = None) -> Path | None:
+    snapshot_dir = snapshot_history_dir(output_dir)
+    if not snapshot_dir.exists():
+        return None
+
+    paths = sorted(snapshot_dir.glob("snapshots_*.parquet"))
+    if not paths:
+        return None
+    return paths[-1]
+
+
 def flatten_market_snapshots(
     snapshots: list[MarketSnapshot],
     captured_at: datetime | None = None,
@@ -66,6 +77,31 @@ def save_market_snapshots(
     path = snapshot_dir / f"snapshots_{timestamp}.parquet"
     pd.DataFrame(rows).to_parquet(path, index=False)
     return path
+
+
+def latest_snapshot_marks(snapshot_dir: Path | None = None) -> pd.DataFrame:
+    path = latest_snapshot_path(snapshot_dir)
+    if path is None:
+        return pd.DataFrame()
+
+    df = pd.read_parquet(path)
+    if df.empty:
+        return df
+
+    if "captured_at" in df.columns:
+        df["captured_at"] = pd.to_datetime(df["captured_at"], utc=True, errors="coerce")
+
+    marks = df.sort_values("captured_at").drop_duplicates(["market_id", "selection_id"], keep="last").copy()
+    marks["mark_price"] = marks["best_lay"].combine_first(marks["last_traded"]).combine_first(marks["best_back"])
+    marks["mark_source"] = pd.Series(pd.NA, index=marks.index, dtype="object")
+    marks.loc[marks["best_lay"].notna(), "mark_source"] = "best_lay"
+    marks.loc[marks["best_lay"].isna() & marks["last_traded"].notna(), "mark_source"] = "last_traded"
+    marks.loc[marks["best_lay"].isna() & marks["last_traded"].isna() & marks["best_back"].notna(), "mark_source"] = (
+        "best_back"
+    )
+    return marks.rename(columns={"captured_at": "mark_captured_at"})[
+        ["market_id", "selection_id", "mark_captured_at", "mark_price", "mark_source"]
+    ]
 
 
 def snapshot_rows_from_market(snapshot: MarketSnapshot) -> list[dict]:

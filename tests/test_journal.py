@@ -1,7 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from src.exchanges.common.models import ExecutionReport, MarketSnapshot, PaperFill, SelectionSnapshot, StrategySignal
+from src.trading.accounting import resolve_journal_position
 from src.trading.journal import JournalStore, journal_performance_summary
+from src.trading.market_history import save_market_snapshots
 
 
 def _snapshot() -> MarketSnapshot:
@@ -95,7 +99,118 @@ def test_journal_summary_includes_strategy_and_bucket_metrics(tmp_path):
 
     summary = journal_performance_summary(tmp_path / "journal.jsonl")
 
+    assert not summary["overview"].empty
+    assert int(summary["overview"].iloc[0]["executed_positions"]) == 1
     assert not summary["strategy"].empty
-    assert int(summary["strategy"].iloc[0]["proposals"]) == 1
-    assert int(summary["strategy"].iloc[0]["accepted_trades"]) == 1
+    assert int(summary["strategy"].iloc[0]["executed_positions"]) == 1
+    assert int(summary["strategy"].iloc[0]["open_positions"]) == 1
     assert not summary["price_bucket"].empty
+
+
+def test_journal_summary_marks_open_positions_with_latest_snapshot(tmp_path):
+    journal_path = tmp_path / "journal.jsonl"
+    snapshot_dir = tmp_path / "snapshots"
+    store = JournalStore(journal_path)
+    snapshot = _snapshot()
+    signal = _signal(snapshot)
+    proposal = store.record_proposal(signal, snapshot)
+    assert proposal is not None
+
+    report = ExecutionReport(
+        accepted=True,
+        exchange="betfair",
+        mode="paper",
+        message="Paper fill created successfully.",
+        fill=PaperFill(
+            market_id="1.100",
+            selection_id="42",
+            side="back",
+            stake=2.0,
+            fill_price=2.40,
+            commission_paid=0.04,
+            slippage_paid=0.01,
+            timestamp=datetime.now(timezone.utc),
+        ),
+    )
+    store.record_execution(proposal.proposal_id, report, mode="paper")
+
+    later_snapshot = _snapshot()
+    later_snapshot.captured_at = snapshot.captured_at + timedelta(hours=1)
+    later_snapshot.selections[0].captured_at = later_snapshot.captured_at
+    later_snapshot.selections[0].best_back = 2.15
+    later_snapshot.selections[0].best_lay = 2.20
+    later_snapshot.selections[0].last_traded = 2.18
+    save_market_snapshots([later_snapshot], output_dir=snapshot_dir, captured_at=later_snapshot.captured_at)
+
+    summary = journal_performance_summary(journal_path, snapshot_dir=snapshot_dir)
+
+    assert len(summary["open_positions"]) == 1
+    open_position = summary["open_positions"].iloc[0]
+    assert open_position["mark_source"] == "best_lay"
+    assert open_position["unrealized_pnl"] == pytest.approx(0.1418)
+
+
+def test_resolve_journal_position_records_realized_pnl(tmp_path):
+    journal_path = tmp_path / "journal.jsonl"
+    store = JournalStore(journal_path)
+    snapshot = _snapshot()
+    signal = _signal(snapshot)
+    proposal = store.record_proposal(signal, snapshot)
+    assert proposal is not None
+
+    report = ExecutionReport(
+        accepted=True,
+        exchange="betfair",
+        mode="paper",
+        message="Paper fill created successfully.",
+        fill=PaperFill(
+            market_id="1.100",
+            selection_id="42",
+            side="back",
+            stake=2.0,
+            fill_price=2.40,
+            commission_paid=0.04,
+            slippage_paid=0.01,
+            timestamp=datetime.now(timezone.utc),
+        ),
+    )
+    store.record_execution(proposal.proposal_id, report, mode="paper")
+
+    resolution = resolve_journal_position(proposal.proposal_id, "won", path=journal_path, note="Manual settle")
+    summary = journal_performance_summary(journal_path)
+
+    assert resolution["realized_pnl"] == pytest.approx(2.76)
+    assert len(summary["closed_positions"]) == 1
+    assert summary["closed_positions"].iloc[0]["resolved_outcome"] == "won"
+    assert summary["closed_positions"].iloc[0]["realized_pnl"] == pytest.approx(2.76)
+
+
+def test_resolve_journal_position_rejects_double_resolution(tmp_path):
+    journal_path = tmp_path / "journal.jsonl"
+    store = JournalStore(journal_path)
+    snapshot = _snapshot()
+    signal = _signal(snapshot)
+    proposal = store.record_proposal(signal, snapshot)
+    assert proposal is not None
+
+    report = ExecutionReport(
+        accepted=True,
+        exchange="betfair",
+        mode="paper",
+        message="Paper fill created successfully.",
+        fill=PaperFill(
+            market_id="1.100",
+            selection_id="42",
+            side="back",
+            stake=2.0,
+            fill_price=2.40,
+            commission_paid=0.04,
+            slippage_paid=0.01,
+            timestamp=datetime.now(timezone.utc),
+        ),
+    )
+    store.record_execution(proposal.proposal_id, report, mode="paper")
+    resolve_journal_position(proposal.proposal_id, "lost", path=journal_path)
+
+    with pytest.raises(ValueError, match="already resolved"):
+        resolve_journal_position(proposal.proposal_id, "won", path=journal_path)

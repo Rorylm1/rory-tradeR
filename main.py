@@ -14,6 +14,7 @@ from src.common.paths import get_data_root, get_runtime_root, runtime_path
 from src.common.util import package_data
 from src.common.util.strings import snake_to_title
 from src.exchanges import BetfairAdapter
+from src.trading.accounting import resolve_journal_position
 from src.trading.data_extract import extract_archive
 from src.trading.data_verify import verify_archive
 from src.trading.doctor import run_doctor
@@ -299,8 +300,19 @@ def journal_report():
         print(f"No journal events found at {runtime_path('journals', 'trading_journal.jsonl')}.\n")
         return
 
-    print(f"journal_events: {len(summary['events'])}")
-    print(f"strategy_groups: {len(summary['strategy'])}")
+    overview = summary["overview"].iloc[0] if not summary["overview"].empty else None
+    if overview is not None:
+        print(f"journal_events: {int(overview['journal_events'])}")
+        print(f"executed_positions: {int(overview['executed_positions'])}")
+        print(f"open_positions: {int(overview['open_positions'])}")
+        print(f"closed_positions: {int(overview['closed_positions'])}")
+        print(f"won_positions: {int(overview['won_positions'])}")
+        print(f"marked_open_positions: {int(overview['marked_open_positions'])}")
+        print(f"total_stake: {overview['total_stake']:.2f}")
+        print(f"total_commission_paid: {overview['total_commission_paid']:.2f}")
+        print(f"total_realized_pnl: {overview['total_realized_pnl']:.2f}")
+        print(f"total_unrealized_pnl: {overview['total_unrealized_pnl']:.2f}")
+        print(f"total_net_pnl: {overview['total_net_pnl']:.2f}")
     print("")
 
     print("Strategy performance:")
@@ -311,11 +323,13 @@ def journal_report():
             print(
                 "  "
                 f"{row['strategy_name']}@{row['strategy_version']}: "
-                f"proposals={int(row['proposals'])} "
-                f"accepted={int(row['accepted_trades'])} "
+                f"executed={int(row['executed_positions'])} "
+                f"open={int(row['open_positions'])} "
+                f"closed={int(row['closed_positions'])} "
                 f"avg_confidence={row['avg_confidence']:.3f} "
                 f"total_stake={row['total_stake']:.2f} "
-                f"total_cost={row['total_cost']:.2f}"
+                f"realized={row['total_realized_pnl']:.2f} "
+                f"unrealized={row['total_unrealized_pnl']:.2f}"
             )
     print("")
 
@@ -327,9 +341,10 @@ def journal_report():
             print(
                 "  "
                 f"{row['price_bucket']}: "
-                f"proposals={int(row['proposals'])} "
-                f"accepted={int(row['accepted_trades'])} "
-                f"total_cost={row['total_cost']:.2f}"
+                f"executed={int(row['executed_positions'])} "
+                f"closed={int(row['closed_positions'])} "
+                f"realized={row['total_realized_pnl']:.2f} "
+                f"unrealized={row['total_unrealized_pnl']:.2f}"
             )
     print("")
 
@@ -341,11 +356,65 @@ def journal_report():
             print(
                 "  "
                 f"{row['time_window']}: "
-                f"proposals={int(row['proposals'])} "
-                f"accepted={int(row['accepted_trades'])} "
-                f"total_cost={row['total_cost']:.2f}"
+                f"executed={int(row['executed_positions'])} "
+                f"closed={int(row['closed_positions'])} "
+                f"realized={row['total_realized_pnl']:.2f} "
+                f"unrealized={row['total_unrealized_pnl']:.2f}"
             )
     print("")
+
+    print("Open positions:")
+    if summary["open_positions"].empty:
+        print("  (none)")
+    else:
+        for _, row in summary["open_positions"].head(10).iterrows():
+            mark_price = f"{row['mark_price']:.3f}" if row.get("mark_price") == row.get("mark_price") else "n/a"
+            unrealized = (
+                f"{row['unrealized_pnl']:.2f}" if row.get("unrealized_pnl") == row.get("unrealized_pnl") else "n/a"
+            )
+            print(
+                "  "
+                f"{row['proposal_id']} {row['selection_name']} "
+                f"entry={row['fill_price']:.3f} "
+                f"mark={mark_price} "
+                f"unrealized={unrealized}"
+            )
+    print("")
+
+    print("Closed positions:")
+    if summary["closed_positions"].empty:
+        print("  (none)")
+    else:
+        for _, row in summary["closed_positions"].head(10).iterrows():
+            print(
+                "  "
+                f"{row['proposal_id']} {row['selection_name']} "
+                f"outcome={row['resolved_outcome']} "
+                f"realized={row['realized_pnl']:.2f}"
+            )
+    print("")
+
+
+def resolve_paper(proposal_id: str | None = None, outcome: str | None = None, note: str = ""):
+    """Resolve an executed paper position manually and append the outcome to the journal."""
+    if not proposal_id or not outcome:
+        print("Usage: uv run main.py resolve-paper <proposal_id> <won|lost|void> [note]")
+        sys.exit(1)
+
+    try:
+        result = resolve_journal_position(proposal_id, outcome, note=note)
+    except ValueError as exc:
+        print(f"\nResolution failed: {exc}\n")
+        sys.exit(1)
+
+    print("\nPaper resolution recorded:\n")
+    print(f"proposal_id: {result['proposal_id']}")
+    print(f"strategy: {result['strategy_name']}@{result['strategy_version']}")
+    print(f"market: {result['market_title']}")
+    print(f"selection: {result['selection_name']}")
+    print(f"outcome: {result['resolved_outcome']}")
+    print(f"realized_pnl: {result['realized_pnl']:.2f}")
+    print(f"journal_path: {runtime_path('journals', 'trading_journal.jsonl')}\n")
 
 
 def data_verify(path: str | None = None):
@@ -390,7 +459,7 @@ def main():
         print("\nUsage: uv run main.py <command>")
         print(
             "Commands: analyze, index, package, doctor, markets, paper, replay, "
-            "data-verify, data-extract, research-priors, journal-report"
+            "data-verify, data-extract, research-priors, journal-report, resolve-paper"
         )
         sys.exit(0)
 
@@ -449,10 +518,17 @@ def main():
         journal_report()
         sys.exit(0)
 
+    if command == "resolve-paper":
+        proposal_id = sys.argv[2] if len(sys.argv) > 2 else None
+        outcome = sys.argv[3] if len(sys.argv) > 3 else None
+        note = " ".join(sys.argv[4:]) if len(sys.argv) > 4 else ""
+        resolve_paper(proposal_id, outcome, note)
+        sys.exit(0)
+
     print(f"Unknown command: {command}")
     print(
         "Commands: analyze, index, package, doctor, markets, paper, replay, "
-        "data-verify, data-extract, research-priors, journal-report"
+        "data-verify, data-extract, research-priors, journal-report, resolve-paper"
     )
     sys.exit(1)
 

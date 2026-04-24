@@ -85,6 +85,7 @@ uv run main.py markets
 uv run main.py paper sports 25
 uv run main.py research-priors
 uv run main.py journal-report
+uv run main.py resolve-paper <proposal_id> <won|lost|void>
 uv run main.py replay
 ```
 
@@ -93,7 +94,8 @@ Notes:
 - `data-verify` validates archive checksum and extraction shape
 - `paper` collects Betfair snapshots, emits strategy proposals, and simulates paper fills
 - `research-priors` summarizes inherited Kalshi price-bucket priors
-- `journal-report` summarizes our own proposal/fill journal by strategy, price bucket, and time-to-event
+- `journal-report` summarizes open positions, closed results, and PnL by strategy, price bucket, and time-to-event
+- `resolve-paper` manually settles a paper position by `proposal_id` and appends the outcome to the journal
 
 ## Data Safety
 

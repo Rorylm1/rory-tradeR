@@ -187,6 +187,28 @@ class JournalStore:
             )
         self._append("execution", payload)
 
+    def record_resolution(
+        self,
+        proposal_id: str,
+        resolved_outcome: str,
+        *,
+        realized_pnl: float,
+        note: str = "",
+        resolved_at: datetime | None = None,
+        source: str = "manual",
+    ) -> None:
+        self._append(
+            "resolution",
+            {
+                "proposal_id": proposal_id,
+                "resolved_outcome": resolved_outcome,
+                "realized_pnl": realized_pnl,
+                "resolution_note": note,
+                "resolution_source": source,
+                "resolved_at": resolved_at or datetime.now(timezone.utc),
+            },
+        )
+
 
 def journal_dataframe(path: Path | None = None) -> pd.DataFrame:
     store = JournalStore(path=path)
@@ -201,109 +223,13 @@ def journal_dataframe(path: Path | None = None) -> pd.DataFrame:
         records.append(row)
     df = pd.DataFrame(records)
 
-    for column in ("created_at", "event_start", "fill_timestamp", "recorded_at"):
+    for column in ("created_at", "event_start", "fill_timestamp", "recorded_at", "resolved_at"):
         if column in df.columns:
             df[column] = pd.to_datetime(df[column], utc=True, errors="coerce")
     return df
 
 
-def journal_performance_summary(path: Path | None = None) -> dict[str, pd.DataFrame]:
-    df = journal_dataframe(path=path)
-    if df.empty:
-        empty = pd.DataFrame()
-        return {"events": df, "strategy": empty, "price_bucket": empty, "time_window": empty}
+def journal_performance_summary(path: Path | None = None, snapshot_dir: Path | None = None) -> dict[str, pd.DataFrame]:
+    from src.trading.accounting import journal_performance_summary as accounting_summary
 
-    proposals = df[df["event_type"] == "proposal"].copy()
-    executions = df[df["event_type"] == "execution"].copy()
-
-    merged = proposals.merge(executions, on="proposal_id", how="left", suffixes=("_proposal", "_execution"))
-    if merged.empty:
-        empty = pd.DataFrame()
-        return {"events": df, "strategy": empty, "price_bucket": empty, "time_window": empty}
-
-    requested_price_column = "requested_price_proposal" if "requested_price_proposal" in merged.columns else "requested_price"
-    created_at_column = "created_at_proposal" if "created_at_proposal" in merged.columns else "created_at"
-    event_start_column = "event_start_proposal" if "event_start_proposal" in merged.columns else "event_start"
-    strategy_name_column = "strategy_name_proposal" if "strategy_name_proposal" in merged.columns else "strategy_name"
-    strategy_version_column = (
-        "strategy_version_proposal" if "strategy_version_proposal" in merged.columns else "strategy_version"
-    )
-    confidence_column = "signal_confidence_proposal" if "signal_confidence_proposal" in merged.columns else "signal_confidence"
-    stake_column = "stake_proposal" if "stake_proposal" in merged.columns else "stake"
-    commission_column = "commission_paid_execution" if "commission_paid_execution" in merged.columns else "commission_paid"
-    slippage_column = "slippage_paid_execution" if "slippage_paid_execution" in merged.columns else "slippage_paid"
-    accepted_column = "accepted_execution" if "accepted_execution" in merged.columns else "accepted"
-    commission = merged[commission_column] if commission_column in merged.columns else pd.Series(0.0, index=merged.index)
-    slippage = merged[slippage_column] if slippage_column in merged.columns else pd.Series(0.0, index=merged.index)
-    accepted = (
-        merged[accepted_column].astype("boolean")
-        if accepted_column in merged.columns
-        else pd.Series(False, index=merged.index, dtype="boolean")
-    )
-    merged["net_cost"] = commission.fillna(0) + slippage.fillna(0)
-    merged["accepted"] = accepted.fillna(False).astype(bool)
-    merged["price_bucket"] = pd.cut(
-        merged[requested_price_column],
-        bins=[0, 1.5, 2.0, 3.0, 5.0, 10.0, 100.0],
-        labels=["<=1.5", "1.5-2.0", "2.0-3.0", "3.0-5.0", "5.0-10.0", "10.0+"],
-        include_lowest=True,
-    )
-    merged["hours_to_event"] = (
-        (merged[event_start_column] - merged[created_at_column]).dt.total_seconds() / 3600
-        if event_start_column in merged.columns and created_at_column in merged.columns
-        else pd.Series(dtype=float)
-    )
-    merged["time_window"] = pd.cut(
-        merged["hours_to_event"],
-        bins=[0, 6, 12, 24, 48, 96, 999999],
-        labels=["0-6h", "6-12h", "12-24h", "24-48h", "48-96h", "96h+"],
-        include_lowest=True,
-    )
-
-    strategy = (
-        merged.groupby([strategy_name_column, strategy_version_column], dropna=False)
-        .agg(
-            proposals=("proposal_id", "count"),
-            accepted_trades=("accepted", "sum"),
-            avg_confidence=(confidence_column, "mean"),
-            total_stake=(stake_column, "sum"),
-            total_cost=("net_cost", "sum"),
-        )
-        .reset_index()
-    )
-    strategy = strategy.rename(
-        columns={
-            strategy_name_column: "strategy_name",
-            strategy_version_column: "strategy_version",
-        }
-    )
-
-    price_bucket = (
-        merged.groupby(["price_bucket"], dropna=False, observed=False)
-        .agg(
-            proposals=("proposal_id", "count"),
-            accepted_trades=("accepted", "sum"),
-            avg_confidence=(confidence_column, "mean"),
-            total_cost=("net_cost", "sum"),
-        )
-        .reset_index()
-    )
-
-    time_window = (
-        merged.groupby(["time_window"], dropna=False, observed=False)
-        .agg(
-            proposals=("proposal_id", "count"),
-            accepted_trades=("accepted", "sum"),
-            avg_confidence=(confidence_column, "mean"),
-            total_cost=("net_cost", "sum"),
-        )
-        .reset_index()
-    )
-
-    return {
-        "events": df,
-        "merged": merged,
-        "strategy": strategy,
-        "price_bucket": price_bucket,
-        "time_window": time_window,
-    }
+    return accounting_summary(path=path, snapshot_dir=snapshot_dir)

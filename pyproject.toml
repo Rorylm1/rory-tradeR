@@ -8,6 +8,7 @@ dependencies = [
     "brokenaxes>=0.6.2",
     "cryptography>=46.0.3",
     "duckdb>=1.4.2",
+    "fastapi>=0.115.0",
     "httpx>=0.28.1",
     "imageio>=2.36.0",
     "kalshi-python>=2.1.4",
@@ -22,6 +23,7 @@ dependencies = [
     "web3>=6.0.0",
     "simple-term-menu>=1.6.0",
     "python-dotenv>=1.2.1",
+    "uvicorn[standard]>=0.34.0",
     "zstandard>=0.23.0",
 ]
 

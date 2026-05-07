@@ -9,6 +9,7 @@
 *.pfx
 *.md
 !README.md
+!docs/trading/deployment/hetzner-vercel-dashboard.md
 
 # Python-generated files
 __pycache__/
@@ -40,6 +41,9 @@ output
 .tmp
 runtime/*
 !runtime/.gitkeep
+web/.next/
+web/node_modules/
+web/tsconfig.tsbuildinfo
 *.log
 *.journal.jsonl
 *.snapshot.json

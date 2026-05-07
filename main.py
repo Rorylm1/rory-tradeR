@@ -191,9 +191,7 @@ def markets(category: str | None = None, max_results: int = 5):
         print(f"  start: {event_start}")
         print(f"  status: {snapshot.status}")
         for selection in snapshot.selections[:3]:
-            probability = (
-                f"{selection.implied_probability:.3f}" if selection.implied_probability is not None else "n/a"
-            )
+            probability = f"{selection.implied_probability:.3f}" if selection.implied_probability is not None else "n/a"
             print(
                 "  - "
                 f"{selection.selection_name}: "
@@ -454,12 +452,19 @@ def data_extract(path: str | None = None, destination: str | None = None, prefix
     print(f"extracted_bytes: {report.extracted_bytes}")
 
 
+def dashboard_api(host: str = "127.0.0.1", port: int = 8000):
+    """Run the local/VPS dashboard API."""
+    import uvicorn
+
+    uvicorn.run("src.dashboard.api:app", host=host, port=port)
+
+
 def main():
     if len(sys.argv) < 2:
         print("\nUsage: uv run main.py <command>")
         print(
             "Commands: analyze, index, package, doctor, markets, paper, replay, "
-            "data-verify, data-extract, research-priors, journal-report, resolve-paper"
+            "data-verify, data-extract, research-priors, journal-report, resolve-paper, dashboard-api"
         )
         sys.exit(0)
 
@@ -525,10 +530,16 @@ def main():
         resolve_paper(proposal_id, outcome, note)
         sys.exit(0)
 
+    if command == "dashboard-api":
+        host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
+        port = int(sys.argv[3]) if len(sys.argv) > 3 else 8000
+        dashboard_api(host=host, port=port)
+        sys.exit(0)
+
     print(f"Unknown command: {command}")
     print(
         "Commands: analyze, index, package, doctor, markets, paper, replay, "
-        "data-verify, data-extract, research-priors, journal-report, resolve-paper"
+        "data-verify, data-extract, research-priors, journal-report, resolve-paper, dashboard-api"
     )
     sys.exit(1)
 

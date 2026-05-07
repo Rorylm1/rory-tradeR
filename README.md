@@ -87,6 +87,7 @@ uv run main.py research-priors
 uv run main.py journal-report
 uv run main.py resolve-paper <proposal_id> <won|lost|void>
 uv run main.py replay
+uv run main.py dashboard-api 127.0.0.1 8000
 ```
 
 Notes:
@@ -96,6 +97,17 @@ Notes:
 - `research-priors` summarizes inherited Kalshi price-bucket priors
 - `journal-report` summarizes open positions, closed results, and PnL by strategy, price bucket, and time-to-event
 - `resolve-paper` manually settles a paper position by `proposal_id` and appends the outcome to the journal
+- `dashboard-api` serves the token-protected FastAPI backend for the deployed trade monitor
+
+## Dashboard
+
+The first deployed dashboard uses a hybrid shape:
+- Hetzner VPS runs the FastAPI backend, Betfair access, SQLite dashboard state, and append-only journal.
+- Vercel serves the login-protected Next.js UI from `web/`.
+- Betfair secrets stay on the VPS and must not be configured in Vercel.
+- Live-review buttons record status and notes only; no live order endpoint exists in this milestone.
+
+Deployment notes live in [docs/trading/deployment/hetzner-vercel-dashboard.md](docs/trading/deployment/hetzner-vercel-dashboard.md).
 
 ## Data Safety
 

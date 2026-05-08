@@ -12,8 +12,12 @@ from .service import (
     closed_positions,
     dashboard_health,
     dashboard_overview,
+    latest_markets,
+    latest_strategy_evaluation,
     open_positions,
+    pnl_series,
     recent_events,
+    recent_strategy_decisions,
 )
 from .store import DashboardStore
 
@@ -95,6 +99,24 @@ def dashboard_closed_positions() -> dict:
 @app.get("/api/dashboard/recent-events", dependencies=[Depends(require_dashboard_token)])
 def dashboard_recent_events() -> dict:
     return {"events": recent_events()}
+
+
+@app.get("/api/dashboard/latest-markets", dependencies=[Depends(require_dashboard_token)])
+def dashboard_latest_markets() -> dict:
+    return latest_markets()
+
+
+@app.get("/api/dashboard/pnl-series", dependencies=[Depends(require_dashboard_token)])
+def dashboard_pnl_series() -> dict:
+    return pnl_series()
+
+
+@app.get("/api/dashboard/strategy-decisions", dependencies=[Depends(require_dashboard_token)])
+def dashboard_strategy_decisions() -> dict:
+    return {
+        "evaluation": latest_strategy_evaluation(),
+        "decisions": recent_strategy_decisions(),
+    }
 
 
 @app.post("/api/live-review", dependencies=[Depends(require_dashboard_token)])

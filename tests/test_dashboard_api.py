@@ -7,7 +7,10 @@ from fastapi.testclient import TestClient
 from src.dashboard.api import app
 from src.exchanges.common.adapter import ValidationResult
 from src.exchanges.common.models import ExecutionReport, MarketSnapshot, PaperFill, SelectionSnapshot, StrategySignal
+from src.trading.accounting import resolve_journal_position
 from src.trading.journal import JournalStore
+from src.trading.market_history import save_market_snapshots
+from src.trading.strategy import BackPriceBucketConfig, BackPriceBucketStrategy
 
 
 def _snapshot() -> MarketSnapshot:
@@ -92,6 +95,7 @@ def _seed_open_position() -> str:
 
 def _client(monkeypatch, tmp_path) -> TestClient:
     monkeypatch.setenv("RORY_TRADER_RUNTIME_ROOT", str(tmp_path / "runtime"))
+    monkeypatch.setenv("RORY_TRADER_DATA_ROOT", str(tmp_path / "data"))
     monkeypatch.setenv("RORY_TRADER_DASHBOARD_TOKEN", "test-token")
     return TestClient(app)
 
@@ -108,6 +112,71 @@ def test_dashboard_overview_reads_current_journal(monkeypatch, tmp_path):
     assert payload["overview"]["open_positions"] == 1
     assert payload["live_execution_available"] is False
     assert payload["live_enabled"] is False
+
+
+def test_dashboard_overview_handles_snapshot_only_journal(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    JournalStore().record_snapshot_collection(tmp_path / "snapshots.parquet", 25, "sports")
+
+    response = client.get("/api/dashboard/overview", headers={"X-Rory-Dashboard-Token": "test-token"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overview"]["journal_events"] == 1
+    assert payload["overview"]["executed_positions"] == 0
+    assert payload["overview"]["open_positions"] == 0
+
+
+def test_strategy_decisions_endpoint_reads_latest_evaluation(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    store = JournalStore()
+    strategy = BackPriceBucketStrategy(BackPriceBucketConfig(max_spread=0.04))
+    decisions = strategy.evaluate_decisions([_snapshot()])
+    store.record_strategy_evaluation(strategy.definition, decisions, snapshots_seen=1)
+
+    response = client.get(
+        "/api/dashboard/strategy-decisions",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["evaluation"]["snapshots_seen"] == 1
+    assert payload["evaluation"]["accepted_count"] == 0
+    assert payload["evaluation"]["rejected_count"] == 1
+    assert payload["decisions"][0]["reason_code"] == "spread_too_wide"
+
+
+def test_latest_markets_endpoint_reads_latest_snapshot(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    save_market_snapshots([_snapshot()], output_dir=tmp_path / "data" / "betfair" / "snapshots")
+
+    response = client.get(
+        "/api/dashboard/latest-markets",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["market_count"] == 1
+    assert payload["selection_count"] == 1
+    assert payload["markets"][0]["event_name"] == "Liverpool v Spurs"
+
+
+def test_pnl_series_endpoint_reads_journal_realized_pnl(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    proposal_id = _seed_open_position()
+    resolve_journal_position(proposal_id, "won")
+
+    response = client.get(
+        "/api/dashboard/pnl-series",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert len(points) == 2
+    assert points[-1]["cumulative_realized_pnl"] > 0
 
 
 def test_open_positions_include_latest_live_review(monkeypatch, tmp_path):

@@ -10,7 +10,7 @@ import pandas as pd
 
 from src.common.paths import runtime_path
 from src.exchanges import BetfairAdapter
-from src.trading.journal import JournalStore, journal_performance_summary
+from src.trading.journal import JournalStore, journal_dataframe, journal_performance_summary
 from src.trading.market_history import latest_snapshot_path
 
 from .store import DashboardStore
@@ -68,6 +68,15 @@ def _overview_row(summary: dict[str, pd.DataFrame]) -> dict[str, Any]:
     return {key: _json_safe(value) for key, value in overview.iloc[0].to_dict().items()}
 
 
+def _with_strategy_counts(overview: dict[str, Any], evaluation: dict[str, Any] | None) -> dict[str, Any]:
+    overview = dict(overview)
+    overview["latest_strategy_decisions"] = int(evaluation.get("decisions_count", 0)) if evaluation else 0
+    overview["latest_strategy_acceptances"] = int(evaluation.get("accepted_count", 0)) if evaluation else 0
+    overview["latest_strategy_rejections"] = int(evaluation.get("rejected_count", 0)) if evaluation else 0
+    overview["latest_strategy_snapshots_seen"] = int(evaluation.get("snapshots_seen", 0)) if evaluation else 0
+    return overview
+
+
 def _latest_snapshot_status(stale_after_seconds: int) -> dict[str, Any]:
     path = latest_snapshot_path()
     if path is None:
@@ -94,6 +103,7 @@ def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
     synced_events = store.sync_journal()
     summary = journal_performance_summary(path=store.journal_path)
+    strategy_evaluation = latest_strategy_evaluation(store=store)
     latest_reviews = store.latest_live_reviews()
     open_positions = _records(summary["open_positions"])
     closed_positions = _records(summary["closed_positions"])
@@ -103,10 +113,12 @@ def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
         row["live_review"] = review
 
     return {
-        "overview": _overview_row(summary),
+        "overview": _with_strategy_counts(_overview_row(summary), strategy_evaluation),
         "open_positions": open_positions,
         "closed_positions": closed_positions,
         "recent_events": recent_events(store=store),
+        "strategy_evaluation": strategy_evaluation,
+        "strategy_decisions": recent_strategy_decisions(store=store),
         "synced_events": synced_events,
         "journal_path": str(store.journal_path),
         "database_path": str(store.db_path),
@@ -181,6 +193,114 @@ def recent_events(store: DashboardStore | None = None, limit: int = 25) -> list[
         }
         for row in rows
     ]
+
+
+def latest_markets(limit: int = 120) -> dict[str, Any]:
+    path = latest_snapshot_path()
+    if path is None:
+        return {
+            "snapshot_path": None,
+            "captured_at": None,
+            "market_count": 0,
+            "selection_count": 0,
+            "markets": [],
+        }
+
+    df = pd.read_parquet(path)
+    if df.empty:
+        return {
+            "snapshot_path": str(path),
+            "captured_at": None,
+            "market_count": 0,
+            "selection_count": 0,
+            "markets": [],
+        }
+
+    if "captured_at" in df.columns:
+        df["captured_at"] = pd.to_datetime(df["captured_at"], utc=True, errors="coerce")
+    if "event_start" in df.columns:
+        df["event_start"] = pd.to_datetime(df["event_start"], utc=True, errors="coerce")
+
+    sort_columns = [column for column in ["event_start", "market_id", "selection_name"] if column in df.columns]
+    rows = df.sort_values(sort_columns).head(limit).copy() if sort_columns else df.head(limit).copy()
+    captured_at = df["captured_at"].max() if "captured_at" in df.columns else None
+
+    return {
+        "snapshot_path": str(path),
+        "captured_at": _json_safe(captured_at),
+        "market_count": int(df["market_id"].nunique()) if "market_id" in df.columns else 0,
+        "selection_count": len(df),
+        "markets": _records(rows),
+    }
+
+
+def pnl_series(store: DashboardStore | None = None) -> dict[str, Any]:
+    store = store or DashboardStore()
+    df = journal_dataframe(path=store.journal_path)
+    if df.empty:
+        return {"points": []}
+
+    if "recorded_at" not in df.columns:
+        return {"points": []}
+
+    rows = df.sort_values("recorded_at").copy()
+    realized = 0.0
+    stake = 0.0
+    points: list[dict[str, Any]] = []
+
+    for _, row in rows.iterrows():
+        event_type = row.get("event_type")
+        accepted = row.get("accepted")
+        if event_type == "execution" and pd.notna(accepted) and bool(accepted) and pd.notna(row.get("stake")):
+            stake += float(row.get("stake"))
+        elif event_type == "resolution" and pd.notna(row.get("realized_pnl")):
+            realized += float(row.get("realized_pnl"))
+        else:
+            continue
+
+        points.append(
+            {
+                "recorded_at": _json_safe(row.get("recorded_at")),
+                "event_type": event_type,
+                "cumulative_realized_pnl": round(realized, 4),
+                "cumulative_stake": round(stake, 4),
+            }
+        )
+
+    return {"points": points}
+
+
+def latest_strategy_evaluation(store: DashboardStore | None = None) -> dict[str, Any] | None:
+    store = store or DashboardStore()
+    events = JournalStore(path=store.journal_path).load_events()
+    for row in reversed(events):
+        if row.get("event_type") != "strategy_evaluation":
+            continue
+        payload = dict(row.get("payload", {}))
+        payload.pop("decisions", None)
+        payload["recorded_at"] = row.get("recorded_at")
+        return payload
+    return None
+
+
+def recent_strategy_decisions(store: DashboardStore | None = None, limit: int = 25) -> list[dict[str, Any]]:
+    store = store or DashboardStore()
+    events = JournalStore(path=store.journal_path).load_events()
+    for row in reversed(events):
+        if row.get("event_type") != "strategy_evaluation":
+            continue
+        decisions = row.get("payload", {}).get("decisions", [])
+        if not isinstance(decisions, list):
+            return []
+        return [
+            {
+                **decision,
+                "recorded_at": row.get("recorded_at"),
+            }
+            for decision in decisions[:limit]
+            if isinstance(decision, dict)
+        ]
+    return []
 
 
 def runtime_database_path() -> Path:

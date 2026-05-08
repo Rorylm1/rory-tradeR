@@ -11,6 +11,7 @@ import pandas as pd
 
 from src.common.paths import runtime_path
 from src.exchanges.common.models import ExecutionReport, MarketSnapshot, StrategySignal
+from src.trading.strategy import StrategyDecision, StrategyDefinition
 
 
 @dataclass
@@ -105,6 +106,33 @@ class JournalStore:
                 "snapshot_path": str(snapshot_path),
                 "snapshot_count": snapshot_count,
                 "category": category or "all",
+            },
+        )
+
+    def record_strategy_evaluation(
+        self,
+        definition: StrategyDefinition,
+        decisions: list[StrategyDecision],
+        *,
+        snapshots_seen: int,
+    ) -> None:
+        rejection_counts: dict[str, int] = {}
+        for decision in decisions:
+            if decision.accepted:
+                continue
+            rejection_counts[decision.reason_code] = rejection_counts.get(decision.reason_code, 0) + 1
+
+        self._append(
+            "strategy_evaluation",
+            {
+                "strategy_name": definition.name,
+                "strategy_version": definition.version,
+                "snapshots_seen": snapshots_seen,
+                "decisions_count": len(decisions),
+                "accepted_count": sum(1 for decision in decisions if decision.accepted),
+                "rejected_count": sum(1 for decision in decisions if not decision.accepted),
+                "rejection_counts": rejection_counts,
+                "decisions": [asdict(decision) for decision in decisions],
             },
         )
 

@@ -233,11 +233,14 @@ def paper(category: str = "sports", max_results: int = 25):
     if snapshot_path is not None:
         journal.record_snapshot_collection(snapshot_path, len(snapshots), category)
 
+    decisions = strategy.evaluate_decisions(snapshots)
+    journal.record_strategy_evaluation(strategy.definition, decisions, snapshots_seen=len(snapshots))
+
     proposals = 0
     duplicates = 0
     paper_fills = 0
 
-    for signal in strategy.evaluate(snapshots):
+    for signal in strategy.signals_from_decisions(decisions):
         snapshot = next((item for item in snapshots if item.market_id == signal.market_id), None)
         if snapshot is None:
             continue
@@ -257,6 +260,9 @@ def paper(category: str = "sports", max_results: int = 25):
     print(f"snapshot_path: {snapshot_path}")
     print(f"snapshots_collected: {len(snapshots)}")
     print(f"strategy: {strategy.definition.name}@{strategy.definition.version}")
+    print(f"strategy_decisions: {len(decisions)}")
+    print(f"strategy_acceptances: {sum(1 for decision in decisions if decision.accepted)}")
+    print(f"strategy_rejections: {sum(1 for decision in decisions if not decision.accepted)}")
     print(f"proposals_created: {proposals}")
     print(f"duplicate_proposals_skipped: {duplicates}")
     print(f"paper_fills_created: {paper_fills}")

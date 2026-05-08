@@ -12,6 +12,10 @@ export type Overview = {
   total_realized_pnl: number;
   total_unrealized_pnl: number;
   total_net_pnl: number;
+  latest_strategy_decisions: number;
+  latest_strategy_acceptances: number;
+  latest_strategy_rejections: number;
+  latest_strategy_snapshots_seen: number;
 };
 
 export type Position = {
@@ -43,6 +47,70 @@ export type RecentEvent = {
   event_type: string;
   recorded_at: string;
   payload: Record<string, unknown>;
+};
+
+export type MarketRow = {
+  captured_at: string | null;
+  exchange: string;
+  market_id: string;
+  market_title: string;
+  selection_id: string;
+  selection_name: string;
+  category: string;
+  subcategory: string;
+  event_start: string | null;
+  event_name: string | null;
+  competition_name: string | null;
+  status: string;
+  best_back: number | null;
+  best_lay: number | null;
+  last_traded: number | null;
+  implied_probability: number | null;
+};
+
+export type LatestMarkets = {
+  snapshot_path: string | null;
+  captured_at: string | null;
+  market_count: number;
+  selection_count: number;
+  markets: MarketRow[];
+};
+
+export type PnlPoint = {
+  recorded_at: string;
+  event_type: string;
+  cumulative_realized_pnl: number;
+  cumulative_stake: number;
+};
+
+export type StrategyEvaluation = {
+  strategy_name: string;
+  strategy_version: string;
+  snapshots_seen: number;
+  decisions_count: number;
+  accepted_count: number;
+  rejected_count: number;
+  rejection_counts: Record<string, number>;
+  recorded_at: string;
+} | null;
+
+export type StrategyDecision = {
+  recorded_at: string;
+  market_id: string;
+  market_title: string;
+  selection_id: string | null;
+  selection_name: string | null;
+  category: string;
+  subcategory: string;
+  event_start: string | null;
+  accepted: boolean;
+  reason_code: string;
+  reason: string;
+  requested_price: number | null;
+  best_back: number | null;
+  best_lay: number | null;
+  spread: number | null;
+  confidence: number;
 };
 
 export type Health = {
@@ -91,12 +159,26 @@ async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function getDashboardData() {
-  const [health, overview, openPositions, closedPositions, recentEvents] = await Promise.all([
+  const [
+    health,
+    overview,
+    openPositions,
+    closedPositions,
+    recentEvents,
+    latestMarkets,
+    pnlSeries,
+    strategyDecisions,
+  ] = await Promise.all([
     backendFetch<Health>("/api/health"),
     backendFetch<{ overview: Overview }>("/api/dashboard/overview"),
     backendFetch<{ positions: Position[] }>("/api/dashboard/open-positions"),
     backendFetch<{ positions: Position[] }>("/api/dashboard/closed-positions"),
     backendFetch<{ events: RecentEvent[] }>("/api/dashboard/recent-events"),
+    backendFetch<LatestMarkets>("/api/dashboard/latest-markets"),
+    backendFetch<{ points: PnlPoint[] }>("/api/dashboard/pnl-series"),
+    backendFetch<{ evaluation: StrategyEvaluation; decisions: StrategyDecision[] }>(
+      "/api/dashboard/strategy-decisions",
+    ),
   ]);
 
   return {
@@ -105,6 +187,9 @@ export async function getDashboardData() {
     openPositions: openPositions.positions,
     closedPositions: closedPositions.positions,
     recentEvents: recentEvents.events,
+    latestMarkets,
+    pnlPoints: pnlSeries.points,
+    strategyEvaluation: strategyDecisions.evaluation,
+    strategyDecisions: strategyDecisions.decisions,
   };
 }
-

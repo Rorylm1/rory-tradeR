@@ -71,3 +71,25 @@ def test_back_price_bucket_strategy_skips_wide_spreads():
     signals = strategy.evaluate([_snapshot(spread=0.25)])
 
     assert signals == []
+
+
+def test_back_price_bucket_strategy_records_rejection_reasons():
+    strategy = BackPriceBucketStrategy(BackPriceBucketConfig(max_spread=0.08))
+
+    decisions = strategy.evaluate_decisions([_snapshot(spread=0.25)])
+
+    assert len(decisions) == 1
+    assert decisions[0].accepted is False
+    assert decisions[0].reason_code == "spread_too_wide"
+
+
+def test_back_price_bucket_strategy_converts_accepted_decisions_to_signals():
+    strategy = BackPriceBucketStrategy(BackPriceBucketConfig())
+
+    decisions = strategy.evaluate_decisions([_snapshot()])
+    signals = strategy.signals_from_decisions(decisions)
+
+    assert len(decisions) == 1
+    assert decisions[0].accepted is True
+    assert len(signals) == 1
+    assert signals[0].selection_id == "42"

@@ -6,6 +6,7 @@ from src.exchanges.common.models import ExecutionReport, MarketSnapshot, PaperFi
 from src.trading.accounting import resolve_journal_position
 from src.trading.journal import JournalStore, journal_performance_summary
 from src.trading.market_history import save_market_snapshots
+from src.trading.strategy import BackPriceBucketConfig, BackPriceBucketStrategy
 
 
 def _snapshot() -> MarketSnapshot:
@@ -70,6 +71,24 @@ def test_journal_store_suppresses_duplicate_proposals(tmp_path):
 
     assert proposal1 is not None
     assert proposal2 is None
+
+
+def test_journal_store_records_strategy_evaluation_decisions(tmp_path):
+    store = JournalStore(tmp_path / "journal.jsonl")
+    strategy = BackPriceBucketStrategy(BackPriceBucketConfig(max_spread=0.04))
+    decisions = strategy.evaluate_decisions([_snapshot()])
+
+    store.record_strategy_evaluation(strategy.definition, decisions, snapshots_seen=1)
+    events = store.load_events()
+
+    assert len(events) == 1
+    payload = events[0]["payload"]
+    assert events[0]["event_type"] == "strategy_evaluation"
+    assert payload["snapshots_seen"] == 1
+    assert payload["accepted_count"] == 0
+    assert payload["rejected_count"] == 1
+    assert payload["rejection_counts"]["spread_too_wide"] == 1
+    assert payload["decisions"][0]["reason_code"] == "spread_too_wide"
 
 
 def test_journal_summary_includes_strategy_and_bucket_metrics(tmp_path):

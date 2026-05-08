@@ -101,6 +101,9 @@ def _build_positions(path: Path | None = None, snapshot_dir: Path | None = None)
         return df, pd.DataFrame()
 
     proposals = df[df["event_type"] == "proposal"].copy()
+    if "accepted" not in df.columns:
+        return df, pd.DataFrame()
+
     executions = df[(df["event_type"] == "execution") & (df["accepted"] == True)].copy()  # noqa: E712
     resolutions = df[df["event_type"] == "resolution"].copy()
 

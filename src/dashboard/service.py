@@ -10,14 +10,19 @@ import pandas as pd
 
 from src.common.paths import runtime_path
 from src.exchanges import BetfairAdapter
+from src.exchanges.common.models import MarketSnapshot
 from src.trading.journal import JournalStore, journal_dataframe, journal_performance_summary
-from src.trading.market_history import latest_snapshot_path
+from src.trading.market_history import flatten_market_snapshots, latest_snapshot_path
 
 from .store import DashboardStore
 
 LIVE_ENABLED_ENV_VAR = "RORY_TRADER_LIVE_ENABLED"
 STALE_AFTER_SECONDS_ENV_VAR = "RORY_TRADER_DASHBOARD_STALE_AFTER_SECONDS"
+MIN_AVAILABLE_SIZE_ENV_VAR = "RORY_TRADER_DASHBOARD_MIN_AVAILABLE_SIZE"
+MIN_MARKET_TOTAL_MATCHED_ENV_VAR = "RORY_TRADER_DASHBOARD_MIN_MARKET_TOTAL_MATCHED"
 DEFAULT_STALE_AFTER_SECONDS = 30 * 60
+DEFAULT_MIN_AVAILABLE_SIZE = 2.0
+DEFAULT_MIN_MARKET_TOTAL_MATCHED = 100.0
 
 
 def _json_safe(value: Any) -> Any:
@@ -99,6 +104,120 @@ def _latest_snapshot_status(stale_after_seconds: int) -> dict[str, Any]:
     }
 
 
+def _data_quality_from_frame(
+    df: pd.DataFrame,
+    *,
+    min_available_size: float | None = None,
+    min_market_total_matched: float | None = None,
+) -> dict[str, Any]:
+    min_available_size = min_available_size if min_available_size is not None else float(
+        os.getenv(MIN_AVAILABLE_SIZE_ENV_VAR, str(DEFAULT_MIN_AVAILABLE_SIZE))
+    )
+    min_market_total_matched = min_market_total_matched if min_market_total_matched is not None else float(
+        os.getenv(MIN_MARKET_TOTAL_MATCHED_ENV_VAR, str(DEFAULT_MIN_MARKET_TOTAL_MATCHED))
+    )
+    if df.empty:
+        return {
+            "market_count": 0,
+            "selection_count": 0,
+            "priced_selection_count": 0,
+            "missing_price_count": 0,
+            "liquid_selection_count": 0,
+            "tradeable_selection_count": 0,
+            "delayed_market_data_count": 0,
+            "in_play_market_count": 0,
+            "min_available_size": min_available_size,
+            "min_market_total_matched": min_market_total_matched,
+            "price_missing_kill_switch": True,
+            "liquidity_kill_switch": True,
+            "delayed_data_kill_switch": False,
+            "in_play_kill_switch": False,
+        }
+
+    for column in [
+        "best_back",
+        "best_lay",
+        "last_traded",
+        "best_back_size",
+        "best_lay_size",
+        "market_total_matched",
+    ]:
+        if column not in df.columns:
+            df[column] = pd.NA
+
+    priced = df[["best_back", "best_lay", "last_traded"]].notna().any(axis=1)
+    executable = df[["best_back", "best_lay"]].notna().all(axis=1)
+    has_size = df["best_back_size"].isna() | (pd.to_numeric(df["best_back_size"], errors="coerce") >= min_available_size)
+    has_market_liquidity = df["market_total_matched"].isna() | (
+        pd.to_numeric(df["market_total_matched"], errors="coerce") >= min_market_total_matched
+    )
+    liquid = executable & has_size & has_market_liquidity
+
+    delayed_count = 0
+    if "is_market_data_delayed" in df.columns:
+        delayed_count = int(df[df["is_market_data_delayed"] == True]["market_id"].nunique())  # noqa: E712
+    in_play_count = 0
+    if "in_play" in df.columns:
+        in_play_count = int(df[df["in_play"] == True]["market_id"].nunique())  # noqa: E712
+
+    market_count = int(df["market_id"].nunique()) if "market_id" in df.columns else 0
+    selection_count = len(df)
+    priced_count = int(priced.sum())
+    liquid_count = int(liquid.sum())
+    missing_price_count = selection_count - priced_count
+
+    return {
+        "market_count": market_count,
+        "selection_count": selection_count,
+        "priced_selection_count": priced_count,
+        "missing_price_count": missing_price_count,
+        "liquid_selection_count": liquid_count,
+        "tradeable_selection_count": liquid_count,
+        "delayed_market_data_count": delayed_count,
+        "in_play_market_count": in_play_count,
+        "min_available_size": min_available_size,
+        "min_market_total_matched": min_market_total_matched,
+        "price_missing_kill_switch": missing_price_count > 0,
+        "liquidity_kill_switch": liquid_count == 0,
+        "delayed_data_kill_switch": delayed_count > 0,
+        "in_play_kill_switch": in_play_count > 0,
+    }
+
+
+def _snapshot_data_quality(
+    path: Path | None = None,
+    *,
+    min_available_size: float | None = None,
+    min_market_total_matched: float | None = None,
+) -> dict[str, Any]:
+    path = path or latest_snapshot_path()
+    if path is None:
+        return _data_quality_from_frame(
+            pd.DataFrame(),
+            min_available_size=min_available_size,
+            min_market_total_matched=min_market_total_matched,
+        )
+
+    return _data_quality_from_frame(
+        pd.read_parquet(path),
+        min_available_size=min_available_size,
+        min_market_total_matched=min_market_total_matched,
+    )
+
+
+def _market_rows_from_snapshots(snapshots: list[MarketSnapshot]) -> pd.DataFrame:
+    rows = flatten_market_snapshots(snapshots, captured_at=datetime.now(timezone.utc))
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    if "captured_at" in df.columns:
+        df["captured_at"] = pd.to_datetime(df["captured_at"], utc=True, errors="coerce")
+    if "event_start" in df.columns:
+        df["event_start"] = pd.to_datetime(df["event_start"], utc=True, errors="coerce")
+    return df
+
+
 def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
     synced_events = store.sync_journal()
@@ -154,6 +273,7 @@ def dashboard_health(store: DashboardStore | None = None, validate_betfair: bool
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "betfair": validation_payload,
         "snapshots": _latest_snapshot_status(stale_after_seconds),
+        "data_quality": _snapshot_data_quality(),
         "journal_path": str(store.journal_path),
         "database_path": str(store.db_path),
         "supports_live_execution": adapter.supports_live_execution,
@@ -203,6 +323,7 @@ def latest_markets(limit: int = 120) -> dict[str, Any]:
             "captured_at": None,
             "market_count": 0,
             "selection_count": 0,
+            "data_quality": _snapshot_data_quality(path),
             "markets": [],
         }
 
@@ -213,6 +334,7 @@ def latest_markets(limit: int = 120) -> dict[str, Any]:
             "captured_at": None,
             "market_count": 0,
             "selection_count": 0,
+            "data_quality": _snapshot_data_quality(path),
             "markets": [],
         }
 
@@ -230,7 +352,79 @@ def latest_markets(limit: int = 120) -> dict[str, Any]:
         "captured_at": _json_safe(captured_at),
         "market_count": int(df["market_id"].nunique()) if "market_id" in df.columns else 0,
         "selection_count": len(df),
+        "data_quality": _snapshot_data_quality(path),
         "markets": _records(rows),
+    }
+
+
+def live_odds(category: str = "tennis", max_results: int = 25, limit: int = 160) -> dict[str, Any]:
+    adapter = BetfairAdapter()
+    validation = adapter.validate_credentials()
+    validation_payload = {
+        "exchange": validation.exchange,
+        "ok": validation.ok,
+        "approval_status": validation.approval_status,
+        "message": validation.message,
+    }
+
+    fetched_at = datetime.now(timezone.utc)
+    if not validation.ok:
+        return {
+            "mode": "live",
+            "read_only": True,
+            "fetched_at": fetched_at.isoformat(),
+            "category": category,
+            "max_results": max_results,
+            "betfair": validation_payload,
+            "market_count": 0,
+            "selection_count": 0,
+            "data_quality": _data_quality_from_frame(pd.DataFrame()),
+            "markets": [],
+            "error": "Betfair validation failed.",
+            "live_execution_available": False,
+        }
+
+    try:
+        snapshots = adapter.list_markets(category=category, max_results=max_results)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "mode": "live",
+            "read_only": True,
+            "fetched_at": fetched_at.isoformat(),
+            "category": category,
+            "max_results": max_results,
+            "betfair": validation_payload,
+            "market_count": 0,
+            "selection_count": 0,
+            "data_quality": _data_quality_from_frame(pd.DataFrame()),
+            "markets": [],
+            "error": f"Betfair live odds fetch failed: {exc.__class__.__name__}",
+            "live_execution_available": False,
+        }
+
+    for snapshot in snapshots:
+        snapshot.captured_at = snapshot.captured_at or fetched_at
+        for selection in snapshot.selections:
+            selection.captured_at = selection.captured_at or snapshot.captured_at
+
+    df = _market_rows_from_snapshots(snapshots)
+    if not df.empty:
+        sort_columns = [column for column in ["event_start", "market_id", "selection_name"] if column in df.columns]
+        df = df.sort_values(sort_columns).head(limit).copy() if sort_columns else df.head(limit).copy()
+
+    return {
+        "mode": "live",
+        "read_only": True,
+        "fetched_at": fetched_at.isoformat(),
+        "category": category,
+        "max_results": max_results,
+        "betfair": validation_payload,
+        "market_count": len(snapshots),
+        "selection_count": int(sum(len(snapshot.selections) for snapshot in snapshots)),
+        "data_quality": _data_quality_from_frame(df),
+        "markets": _records(df),
+        "error": None,
+        "live_execution_available": False,
     }
 
 

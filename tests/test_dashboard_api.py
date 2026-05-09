@@ -31,6 +31,10 @@ def _snapshot() -> MarketSnapshot:
         event_name="Liverpool v Spurs",
         competition_name="Premier League",
         captured_at=now,
+        best_back_size=250.0,
+        best_lay_size=240.0,
+        traded_volume=1000.0,
+        total_matched=5000.0,
     )
     return MarketSnapshot(
         exchange="betfair",
@@ -44,6 +48,10 @@ def _snapshot() -> MarketSnapshot:
         event_name="Liverpool v Spurs",
         competition_name="Premier League",
         captured_at=now,
+        total_matched=5000.0,
+        total_available=1000.0,
+        in_play=False,
+        is_market_data_delayed=False,
     )
 
 
@@ -160,7 +168,47 @@ def test_latest_markets_endpoint_reads_latest_snapshot(monkeypatch, tmp_path):
     payload = response.json()
     assert payload["market_count"] == 1
     assert payload["selection_count"] == 1
+    assert payload["data_quality"]["tradeable_selection_count"] == 1
     assert payload["markets"][0]["event_name"] == "Liverpool v Spurs"
+    assert payload["markets"][0]["best_back_size"] == 250.0
+
+
+def test_live_odds_endpoint_fetches_betfair_without_saving_snapshot(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    snapshot = _snapshot()
+
+    class FakeBetfairAdapter:
+        name = "betfair"
+
+        def validate_credentials(self):
+            return ValidationResult(
+                exchange="betfair",
+                ok=True,
+                approval_status="ready",
+                message="Betfair login status: SUCCESS (mode: cert)",
+            )
+
+        def list_markets(self, category: str | None = None, max_results: int = 10):
+            assert category == "tennis"
+            assert max_results == 25
+            return [snapshot]
+
+    monkeypatch.setattr("src.dashboard.service.BetfairAdapter", FakeBetfairAdapter)
+
+    response = client.get(
+        "/api/dashboard/live-odds?category=tennis&max_results=25",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "live"
+    assert payload["read_only"] is True
+    assert payload["market_count"] == 1
+    assert payload["selection_count"] == 1
+    assert payload["data_quality"]["tradeable_selection_count"] == 1
+    assert payload["markets"][0]["event_name"] == "Liverpool v Spurs"
+    assert payload["live_execution_available"] is False
 
 
 def test_pnl_series_endpoint_reads_journal_realized_pnl(monkeypatch, tmp_path):
@@ -235,6 +283,7 @@ def test_health_does_not_expose_secrets(monkeypatch, tmp_path):
     payload = response.json()
     assert payload["supports_live_execution"] is False
     assert payload["live_execution_available"] is False
+    assert "data_quality" in payload
     assert "should-not-appear" not in response.text
 
 

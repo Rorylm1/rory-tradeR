@@ -38,6 +38,17 @@ class BetfairAdapter(ExchangeAdapter):
                 matches.append(event_type_id)
         return matches
 
+    def _market_type_codes_for_category(self, category: str | None) -> list[str]:
+        if not category:
+            return []
+
+        category_lower = category.strip().lower()
+        if category_lower != "tennis":
+            return []
+
+        raw = os.getenv("RORY_TRADER_BETFAIR_TENNIS_MARKET_TYPES", "MATCH_ODDS,SET_WINNER")
+        return [item.strip().upper() for item in raw.split(",") if item.strip()]
+
     def _missing_fields(self) -> list[str]:
         missing = []
         required = [
@@ -190,6 +201,9 @@ class BetfairAdapter(ExchangeAdapter):
         event_type_ids = self._event_type_ids_for_category(category)
         if event_type_ids:
             market_filter["eventTypeIds"] = event_type_ids
+        market_type_codes = self._market_type_codes_for_category(category)
+        if market_type_codes:
+            market_filter["marketTypeCodes"] = market_type_codes
 
         catalogue = self._rpc_request(
             "SportsAPING/v1.0/listMarketCatalogue",
@@ -215,7 +229,7 @@ class BetfairAdapter(ExchangeAdapter):
             "SportsAPING/v1.0/listMarketBook",
             {
                 "marketIds": market_ids,
-                "priceProjection": {"priceData": ["EX_BEST_OFFERS"]},
+                "priceProjection": {"priceData": ["EX_BEST_OFFERS", "EX_TRADED"]},
             },
         )
         books_by_market_id = {book.get("marketId"): book for book in books}
@@ -256,6 +270,19 @@ class BetfairAdapter(ExchangeAdapter):
         raw_book = raw_book or {}
         runners_by_id = {str(runner.get("selectionId")): runner for runner in raw_book.get("runners", [])}
 
+        def top_offer(offers: list[dict] | None) -> tuple[float | None, float | None]:
+            if not offers:
+                return None, None
+            offer = offers[0] or {}
+            return offer.get("price"), offer.get("size")
+
+        def traded_volume(ex: dict, runner_book: dict) -> float | None:
+            traded = ex.get("tradedVolume") or []
+            if traded:
+                return round(sum(float(item.get("size") or 0.0) for item in traded), 4)
+            value = runner_book.get("totalMatched")
+            return float(value) if value is not None else None
+
         # Parse event start time
         event_start = raw_market.get("marketStartTime")
         parsed_start = None
@@ -280,8 +307,8 @@ class BetfairAdapter(ExchangeAdapter):
             selection_id = str(runner.get("selectionId", ""))
             runner_book = runners_by_id.get(selection_id, {})
             ex = runner_book.get("ex", {})
-            best_back = (ex.get("availableToBack") or [{}])[0].get("price")
-            best_lay = (ex.get("availableToLay") or [{}])[0].get("price")
+            best_back, best_back_size = top_offer(ex.get("availableToBack"))
+            best_lay, best_lay_size = top_offer(ex.get("availableToLay"))
             last_traded = runner_book.get("lastPriceTraded")
             selections.append(
                 SelectionSnapshot(
@@ -299,6 +326,10 @@ class BetfairAdapter(ExchangeAdapter):
                     status=status,
                     event_name=event_name,
                     competition_name=competition_name,
+                    best_back_size=best_back_size,
+                    best_lay_size=best_lay_size,
+                    traded_volume=traded_volume(ex, runner_book),
+                    total_matched=runner_book.get("totalMatched"),
                     raw_payload={"catalogue": runner, "book": runner_book},
                 )
             )
@@ -314,5 +345,9 @@ class BetfairAdapter(ExchangeAdapter):
             selections=selections,
             event_name=event_name,
             competition_name=competition_name,
+            total_matched=raw_book.get("totalMatched"),
+            total_available=raw_book.get("totalAvailable"),
+            in_play=raw_book.get("inplay"),
+            is_market_data_delayed=raw_book.get("isMarketDataDelayed"),
             raw_payload={"catalogue": raw_market, "book": raw_book},
         )

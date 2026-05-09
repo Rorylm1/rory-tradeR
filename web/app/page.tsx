@@ -9,6 +9,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { getDashboardData, PnlPoint, Position, RecentEvent, StrategyDecision, StrategyEvaluation } from "../lib/backend";
+import { LiveOddsPanel } from "./live-odds-panel";
 import { LiveReviewButtons } from "./live-review-buttons";
 import { MarketExplorer } from "./market-explorer";
 
@@ -300,6 +301,12 @@ export default async function DashboardPage() {
   } = data;
   const betfairReady = health.betfair.ok === true;
   const dataFresh = !health.snapshots.stale;
+  const oddsUsable =
+    dataFresh &&
+    health.data_quality.tradeable_selection_count > 0 &&
+    !health.data_quality.price_missing_kill_switch &&
+    !health.data_quality.delayed_data_kill_switch &&
+    !health.data_quality.in_play_kill_switch;
   const liveDisabled = !health.live_execution_available && !health.live_enabled;
 
   return (
@@ -312,6 +319,7 @@ export default async function DashboardPage() {
         <div className="status-row">
           <StatusPill ok={betfairReady} label={betfairReady ? "Betfair ready" : health.betfair.approval_status} />
           <StatusPill ok={dataFresh} label={dataFresh ? "Data fresh" : "Data stale"} />
+          <StatusPill ok={oddsUsable} label={oddsUsable ? "Odds usable" : "Odds guarded"} />
           <StatusPill ok={liveDisabled} label={liveDisabled ? "Live disabled" : "Live enabled"} />
         </div>
       </header>
@@ -326,6 +334,12 @@ export default async function DashboardPage() {
           <span>Last snapshot: {dateTime(health.snapshots.latest_snapshot_modified_at)}</span>
         </div>
         <div>
+          <Database size={18} />
+          <span>
+            {health.data_quality.tradeable_selection_count} usable runners / {health.data_quality.missing_price_count} missing prices
+          </span>
+        </div>
+        <div>
           <Lock size={18} />
           <span>Review controls only. No live order endpoint exists.</span>
         </div>
@@ -335,8 +349,10 @@ export default async function DashboardPage() {
         <Metric label="Net PnL" value={money(overview.total_net_pnl)} icon={TrendingUp} />
         <Metric label="Open positions" value={String(overview.open_positions)} icon={Activity} />
         <Metric label="Latest markets" value={String(latestMarkets.market_count)} icon={Database} />
-        <Metric label="Strategy accepts" value={String(overview.latest_strategy_acceptances)} icon={CheckCircle2} />
+        <Metric label="Usable odds" value={String(latestMarkets.data_quality.tradeable_selection_count)} icon={CheckCircle2} />
       </section>
+
+      <LiveOddsPanel />
 
       <section className="split-grid">
         <section className="panel">

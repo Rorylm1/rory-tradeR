@@ -2,6 +2,18 @@
 
 This deployment keeps Betfair credentials on a Hetzner VPS and uses Vercel only for the dashboard UI.
 
+## Current Deployment
+
+- Dashboard URL: `https://rory-trade-r.vercel.app`
+- Hetzner VPS IPv4: `46.62.217.82`
+- VPS app directory: `/opt/rory-trader`
+- Dashboard API service: `rory-trader-dashboard`
+- One-shot paper service: `rory-trader-paper-session`
+- Betfair cert login status on `2026-05-07`: `SUCCESS`
+- Latest verified dashboard state on `2026-05-07`: Betfair ready, data fresh, live disabled
+- Latest paper session collected 25 live Betfair snapshots and created 0 paper fills because the strategy filters found no eligible trades
+- Next infrastructure tidy-up: put an HTTPS domain in front of the VPS API and update Vercel `TRADER_BACKEND_URL`
+
 ## Architecture
 
 - Hetzner VPS: `uv` Python app, FastAPI dashboard API, SQLite, Betfair credentials, paper journal.
@@ -36,8 +48,9 @@ sudo API_DOMAIN=api.your-domain.example \
 ```
 
 The script installs system packages, installs `uv`, clones or fast-forwards the repo in `/opt/rory-trader`,
-creates the VPS-only `.env` when missing, installs the `systemd` service, and configures a Caddy reverse proxy
-when `API_DOMAIN` is set. It does not print dashboard tokens or Betfair credentials.
+creates the VPS-only `.env` when missing, installs the dashboard `systemd` service, installs a disabled
+one-shot paper-session service, and configures a Caddy reverse proxy when `API_DOMAIN` is set. It does not
+print dashboard tokens or Betfair credentials.
 
 The manual equivalent is:
 
@@ -129,6 +142,9 @@ sudo caddy reload
 
 Deploy the `web/` directory as the Vercel project.
 
+Use an HTTPS API domain for `TRADER_BACKEND_URL` before exposing the deployed dashboard. The raw VPS IP is useful
+for SSH and local smoke checks, but avoid sending `TRADER_BACKEND_TOKEN` over plain HTTP.
+
 Set Vercel environment variables:
 
 ```bash
@@ -139,6 +155,51 @@ TRADER_BACKEND_TOKEN=<same value as RORY_TRADER_DASHBOARD_TOKEN>
 ```
 
 Do not add Betfair credentials to Vercel.
+
+## Betfair Credentials And Certs
+
+Keep Betfair secrets and certificate files on the VPS only. Upload the `.crt` and `.key` files to a temporary
+location first, then run the credential setup script:
+
+```bash
+scp client.crt client.key root@46.62.217.82:/tmp/
+
+ssh root@46.62.217.82
+
+sudo BETFAIR_CERT_SOURCE=/tmp/client.crt \
+  BETFAIR_KEY_SOURCE=/tmp/client.key \
+  bash /opt/rory-trader/scripts/configure-betfair-vps.sh
+
+rm -f /tmp/client.crt /tmp/client.key
+```
+
+The script prompts for the Betfair username, password, and app key without writing them to shell history,
+copies certs into `/opt/rory-trader/certs/`, stores paths in `/opt/rory-trader/.env`, forces
+`RORY_TRADER_LIVE_ENABLED=false`, and runs `doctor`.
+
+Expected file permissions:
+
+```bash
+sudo ls -l /opt/rory-trader/.env /opt/rory-trader/certs/
+```
+
+- `/opt/rory-trader/.env`: `0640`, owned by `root:rory-trader`
+- `/opt/rory-trader/certs/client.crt`: `0640`, owned by `root:rory-trader`
+- `/opt/rory-trader/certs/client.key`: `0640`, owned by `root:rory-trader`
+
+## Live Paper Data
+
+The deployed dashboard reads from the VPS journal and latest Betfair snapshot files. Refresh those with an
+explicit, one-shot paper session:
+
+```bash
+sudo systemctl start rory-trader-paper-session
+sudo journalctl -u rory-trader-paper-session -n 80 --no-pager
+```
+
+This is deliberately not enabled as a timer. The command fetches current Betfair markets, saves snapshots,
+creates strategy proposals, simulates paper fills, and appends to `/opt/rory-trader/runtime/journals/trading_journal.jsonl`.
+The dashboard should then show fresh snapshot status, journal activity, and any open paper positions.
 
 ## Safety Checks
 
@@ -152,3 +213,11 @@ The first request should fail. The second should return health JSON with:
 - `live_execution_available: false`
 - `supports_live_execution: false`
 - `live_enabled: false`
+
+If the VPS is reachable by IP before DNS is attached, test the backend locally over SSH instead:
+
+```bash
+ssh root@46.62.217.82
+TOKEN="$(sudo awk -F= '/^RORY_TRADER_DASHBOARD_TOKEN=/{print $2}' /opt/rory-trader/.env)"
+curl -i -H "X-Rory-Dashboard-Token: $TOKEN" http://127.0.0.1:8000/api/health
+```

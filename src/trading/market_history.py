@@ -53,6 +53,14 @@ def flatten_market_snapshots(
                     "best_lay": selection.best_lay,
                     "last_traded": selection.last_traded,
                     "implied_probability": selection.implied_probability,
+                    "best_back_size": selection.best_back_size,
+                    "best_lay_size": selection.best_lay_size,
+                    "traded_volume": selection.traded_volume,
+                    "selection_total_matched": selection.total_matched,
+                    "market_total_matched": snapshot.total_matched,
+                    "market_total_available": snapshot.total_available,
+                    "in_play": snapshot.in_play,
+                    "is_market_data_delayed": snapshot.is_market_data_delayed,
                 }
             )
     return rows

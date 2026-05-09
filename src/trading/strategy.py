@@ -19,6 +19,9 @@ class StrategyDefinition:
     min_back_price: float
     max_back_price: float
     max_spread: float
+    max_snapshot_age_seconds: int = 30 * 60
+    min_market_total_matched: float = 100.0
+    min_best_back_size: float = 2.0
     allowed_categories: tuple[str, ...] = ("sports",)
     allowed_subcategories: tuple[str, ...] = ()
     holding_period_hours: float = 24.0
@@ -108,6 +111,9 @@ class BackPriceBucketConfig:
     min_back_price: float = 1.8
     max_back_price: float = 3.6
     max_spread: float = 0.12
+    max_snapshot_age_seconds: int = 30 * 60
+    min_market_total_matched: float = 100.0
+    min_best_back_size: float = 2.0
     allowed_subcategories: tuple[str, ...] = ()
     acceptance_min_trades: int = 50
     acceptance_min_roi: float = 0.02
@@ -130,6 +136,9 @@ class BackPriceBucketConfig:
             min_back_price=self.min_back_price,
             max_back_price=self.max_back_price,
             max_spread=self.max_spread,
+            max_snapshot_age_seconds=self.max_snapshot_age_seconds,
+            min_market_total_matched=self.min_market_total_matched,
+            min_best_back_size=self.min_best_back_size,
             allowed_subcategories=self.allowed_subcategories,
             holding_period_hours=self.holding_period_hours,
             acceptance_min_trades=self.acceptance_min_trades,
@@ -212,6 +221,31 @@ class BackPriceBucketStrategy(Strategy):
             )
 
         for snapshot in snapshots:
+            if snapshot.captured_at is None:
+                decisions.append(
+                    market_decision(
+                        snapshot,
+                        "snapshot_captured_at_missing",
+                        "Market snapshot has no capture timestamp.",
+                    )
+                )
+                continue
+            captured_at = snapshot.captured_at
+            if captured_at.tzinfo is None:
+                captured_at = captured_at.replace(tzinfo=timezone.utc)
+            snapshot_age_seconds = (now - captured_at).total_seconds()
+            if snapshot_age_seconds > self.definition.max_snapshot_age_seconds:
+                decisions.append(
+                    market_decision(
+                        snapshot,
+                        "snapshot_stale",
+                        (
+                            f"Snapshot age is {snapshot_age_seconds:.0f}s; maximum is "
+                            f"{self.definition.max_snapshot_age_seconds}s."
+                        ),
+                    )
+                )
+                continue
             if snapshot.category not in self.definition.allowed_categories:
                 decisions.append(
                     market_decision(
@@ -268,6 +302,21 @@ class BackPriceBucketStrategy(Strategy):
                     )
                 )
                 continue
+            if (
+                snapshot.total_matched is not None
+                and snapshot.total_matched < self.definition.min_market_total_matched
+            ):
+                decisions.append(
+                    market_decision(
+                        snapshot,
+                        "market_liquidity_too_low",
+                        (
+                            f"Market total matched {snapshot.total_matched:.2f} is below minimum "
+                            f"{self.definition.min_market_total_matched:.2f}."
+                        ),
+                    )
+                )
+                continue
 
             for selection in snapshot.selections:
                 if selection.status != "open":
@@ -289,6 +338,23 @@ class BackPriceBucketStrategy(Strategy):
                             accepted=False,
                             reason_code="missing_back_or_lay",
                             reason="Selection is missing best back or best lay price.",
+                        )
+                    )
+                    continue
+                if (
+                    selection.best_back_size is not None
+                    and selection.best_back_size < self.definition.min_best_back_size
+                ):
+                    decisions.append(
+                        selection_decision(
+                            snapshot,
+                            selection,
+                            accepted=False,
+                            reason_code="best_back_size_too_low",
+                            reason=(
+                                f"Best back size {selection.best_back_size:.2f} is below minimum "
+                                f"{self.definition.min_best_back_size:.2f}."
+                            ),
                         )
                     )
                     continue

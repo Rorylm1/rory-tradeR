@@ -9,6 +9,14 @@ function number(value: number | null | undefined, digits = 2) {
   return value.toFixed(digits);
 }
 
+function compactNumber(value: number | null | undefined) {
+  if (value === null || value === undefined) return "n/a";
+  return new Intl.NumberFormat("en-GB", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 function dateTime(value: string | null | undefined) {
   if (!value) return "n/a";
   return new Intl.DateTimeFormat("en-GB", {
@@ -21,6 +29,12 @@ function isPriced(market: MarketRow) {
   return market.best_back !== null || market.best_lay !== null || market.last_traded !== null;
 }
 
+function isLiquid(market: MarketRow) {
+  const backSizeOk = market.best_back_size === null || market.best_back_size >= 2;
+  const marketMatchedOk = market.market_total_matched === null || market.market_total_matched >= 100;
+  return market.best_back !== null && market.best_lay !== null && backSizeOk && marketMatchedOk;
+}
+
 type MarketGroup = {
   market_id: string;
   event_name: string | null;
@@ -31,6 +45,10 @@ type MarketGroup = {
   status: string;
   runners: MarketRow[];
   priced: boolean;
+  liquid: boolean;
+  market_total_matched: number | null;
+  in_play: boolean | null;
+  is_market_data_delayed: boolean | null;
 };
 
 function runnerKey(market: MarketRow) {
@@ -57,12 +75,17 @@ function groupMarkets(markets: MarketRow[]): MarketGroup[] {
       status: market.status,
       runners: [],
       priced: false,
+      liquid: false,
+      market_total_matched: market.market_total_matched,
+      in_play: market.in_play,
+      is_market_data_delayed: market.is_market_data_delayed,
     };
     const existingRunnerKeys = new Set(group.runners.map(runnerKey));
     if (!existingRunnerKeys.has(runnerKey(market))) {
       group.runners.push(market);
     }
     group.priced = group.priced || isPriced(market);
+    group.liquid = group.liquid || isLiquid(market);
     groups.set(market.market_id, group);
   }
 
@@ -73,6 +96,7 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
   const [query, setQuery] = useState("");
   const [marketTitle, setMarketTitle] = useState("all");
   const [pricedOnly, setPricedOnly] = useState(false);
+  const [liquidOnly, setLiquidOnly] = useState(false);
 
   const marketTitles = useMemo(
     () => Array.from(new Set(markets.map((market) => market.market_title))).sort(),
@@ -86,6 +110,7 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
     return marketGroups.filter((group) => {
       const matchesTitle = marketTitle === "all" || group.market_title === marketTitle;
       const matchesPriced = !pricedOnly || group.priced;
+      const matchesLiquid = !liquidOnly || group.liquid;
       const searchable = [
         group.event_name,
         group.competition_name,
@@ -96,9 +121,9 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-      return matchesTitle && matchesPriced && (!normalizedQuery || searchable.includes(normalizedQuery));
+      return matchesTitle && matchesPriced && matchesLiquid && (!normalizedQuery || searchable.includes(normalizedQuery));
     });
-  }, [marketGroups, marketTitle, pricedOnly, query]);
+  }, [liquidOnly, marketGroups, marketTitle, pricedOnly, query]);
 
   return (
     <div>
@@ -124,6 +149,10 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
           <input type="checkbox" checked={pricedOnly} onChange={(event) => setPricedOnly(event.target.checked)} />
           Priced only
         </label>
+        <label className="toggle-control">
+          <input type="checkbox" checked={liquidOnly} onChange={(event) => setLiquidOnly(event.target.checked)} />
+          Liquid only
+        </label>
         <span className="control-count">
           {filteredGroups.length} / {marketGroups.length} markets
         </span>
@@ -140,6 +169,7 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
                 <th>Market</th>
                 <th>Runners</th>
                 <th>Best Prices</th>
+                <th>Liquidity</th>
                 <th>Status</th>
                 <th>Start</th>
               </tr>
@@ -182,14 +212,27 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
                         {pricePreview.map((runner, index) => (
                           <span key={`${runnerKey(runner)}-${index}`}>
                             {runner.selection_name}: {number(runner.best_back)} / {number(runner.best_lay)}
+                            {runner.best_back_size !== null ? ` (${compactNumber(runner.best_back_size)})` : ""}
                           </span>
                         ))}
                       </div>
                     )}
                   </td>
                   <td>
-                    <span className={group.priced ? "decision-badge accepted" : "decision-badge rejected"}>
-                      {group.priced ? "Priced" : "No price"}
+                    <span className="primary-cell">{compactNumber(group.market_total_matched)}</span>
+                    <span className="secondary-cell">{group.liquid ? "usable" : "thin or incomplete"}</span>
+                  </td>
+                  <td>
+                    <span className={group.priced && group.liquid ? "decision-badge accepted" : "decision-badge rejected"}>
+                      {group.is_market_data_delayed
+                        ? "Delayed"
+                        : group.in_play
+                          ? "In-play"
+                          : group.priced && group.liquid
+                            ? "Live odds"
+                            : group.priced
+                              ? "Thin"
+                              : "No price"}
                     </span>
                   </td>
                   <td>{dateTime(group.event_start)}</td>

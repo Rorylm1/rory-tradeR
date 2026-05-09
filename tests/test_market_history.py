@@ -24,6 +24,10 @@ def test_save_market_snapshots_writes_flattened_parquet(tmp_path):
         event_name="Arsenal v Chelsea",
         competition_name="Premier League",
         captured_at=captured_at,
+        best_back_size=120.0,
+        best_lay_size=90.0,
+        traded_volume=2500.0,
+        total_matched=5000.0,
     )
     snapshot = MarketSnapshot(
         exchange="betfair",
@@ -37,6 +41,10 @@ def test_save_market_snapshots_writes_flattened_parquet(tmp_path):
         event_name="Arsenal v Chelsea",
         competition_name="Premier League",
         captured_at=captured_at,
+        total_matched=5000.0,
+        total_available=1000.0,
+        in_play=False,
+        is_market_data_delayed=False,
     )
 
     path = save_market_snapshots([snapshot], output_dir=tmp_path, captured_at=captured_at)
@@ -45,3 +53,6 @@ def test_save_market_snapshots_writes_flattened_parquet(tmp_path):
     df = pd.read_parquet(path)
     assert df.loc[0, "competition_name"] == "Premier League"
     assert df.loc[0, "selection_name"] == "Selection"
+    assert df.loc[0, "best_back_size"] == 120.0
+    assert df.loc[0, "market_total_matched"] == 5000.0
+    assert df.loc[0, "in_play"] == False  # noqa: E712

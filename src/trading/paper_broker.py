@@ -11,6 +11,8 @@ class BrokerConfig:
     commission_rate: float = 0.02
     slippage_bps: float = 25.0
     max_stake_per_trade: float = 100.0
+    max_snapshot_age_seconds: int = 30 * 60
+    min_available_size: float = 2.0
 
 
 class PaperBroker:
@@ -18,6 +20,26 @@ class PaperBroker:
         self.config = config or BrokerConfig()
 
     def execute(self, order_intent: OrderIntent, market_snapshot: MarketSnapshot) -> ExecutionReport:
+        now = datetime.now(timezone.utc)
+        captured_at = market_snapshot.captured_at
+        if captured_at is None:
+            return ExecutionReport(
+                accepted=False,
+                exchange=order_intent.exchange,
+                mode="paper",
+                message="Market snapshot has no capture timestamp; refusing stale-unknown paper fill.",
+            )
+        if captured_at.tzinfo is None:
+            captured_at = captured_at.replace(tzinfo=timezone.utc)
+        snapshot_age_seconds = (now - captured_at).total_seconds()
+        if snapshot_age_seconds > self.config.max_snapshot_age_seconds:
+            return ExecutionReport(
+                accepted=False,
+                exchange=order_intent.exchange,
+                mode="paper",
+                message="Market snapshot is stale; refusing paper fill.",
+            )
+
         if not order_intent.paper_only:
             return ExecutionReport(
                 accepted=False,
@@ -53,6 +75,14 @@ class PaperBroker:
                 exchange=order_intent.exchange,
                 mode="paper",
                 message="No executable paper price available for selection.",
+            )
+        available_size = selection.best_back_size if order_intent.side == "back" else selection.best_lay_size
+        if available_size is not None and available_size < self.config.min_available_size:
+            return ExecutionReport(
+                accepted=False,
+                exchange=order_intent.exchange,
+                mode="paper",
+                message="Available exchange size is below min_available_size.",
             )
 
         slippage = base_price * (self.config.slippage_bps / 10000)

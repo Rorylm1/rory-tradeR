@@ -10,6 +10,7 @@ REPO_BRANCH="${REPO_BRANCH:-main}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 SERVICE_NAME="${SERVICE_NAME:-rory-trader-dashboard}"
+PAPER_SERVICE_NAME="${PAPER_SERVICE_NAME:-rory-trader-paper-session}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
 CADDY_DROPIN="${CADDY_DROPIN:-/etc/caddy/conf.d/rory-trader-dashboard.caddy}"
 UV_SYNC_ARGS="${UV_SYNC_ARGS:---group dev}"
@@ -138,7 +139,8 @@ append_env_key() {
 
 create_or_update_env() {
   install -d -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR"
-  install -d -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR/runtime" "$APP_DIR/certs"
+  install -d -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR/runtime" "$APP_DIR/data"
+  install -d -m 0750 -o root -g "$APP_GROUP" "$APP_DIR/certs"
 
   if [[ -z "$DASHBOARD_TOKEN" ]]; then
     DASHBOARD_TOKEN="$(random_token)"
@@ -178,7 +180,7 @@ EOF
 
   chown root:"$APP_GROUP" "$ENV_FILE"
   chmod 0640 "$ENV_FILE"
-  chown -R "$APP_USER":"$APP_GROUP" "$APP_DIR/runtime" "$APP_DIR/certs"
+  chown -R "$APP_USER":"$APP_GROUP" "$APP_DIR/runtime" "$APP_DIR/data"
 
   if grep -Eq '^RORY_TRADER_LIVE_ENABLED=(true|1|yes)$' "$ENV_FILE"; then
     die "$ENV_FILE enables live trading; set RORY_TRADER_LIVE_ENABLED=false before starting the service"
@@ -219,6 +221,32 @@ EOF
 
   systemctl daemon-reload
   systemctl enable --now "$SERVICE_NAME"
+}
+
+install_paper_session_service() {
+  local unit_path="/etc/systemd/system/${PAPER_SERVICE_NAME}.service"
+
+  log "Writing disabled one-shot paper service $unit_path"
+  cat > "$unit_path" <<EOF
+[Unit]
+Description=Rory TradeR One-Shot Paper Session
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$ENV_FILE
+ExecStart=$APP_DIR/scripts/run-paper-session.sh sports 25
+User=$APP_USER
+Group=$APP_GROUP
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=$APP_DIR/runtime $APP_DIR/data
+EOF
+
+  systemctl daemon-reload
 }
 
 configure_caddy() {
@@ -263,6 +291,7 @@ show_next_steps() {
 
   log "Set Vercel TRADER_BACKEND_TOKEN to the same token stored in $ENV_FILE"
   log "Set Vercel DASHBOARD_BASIC_AUTH_USER and DASHBOARD_BASIC_AUTH_PASSWORD before exposing the dashboard"
+  log "After Betfair credentials are configured, run one paper session manually: sudo systemctl start $PAPER_SERVICE_NAME"
 }
 
 main() {
@@ -279,6 +308,7 @@ main() {
   sync_python_env
   create_or_update_env
   install_systemd_service
+  install_paper_session_service
   configure_caddy
   show_next_steps
 }

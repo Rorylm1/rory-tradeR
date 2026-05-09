@@ -120,6 +120,23 @@ textarea {
   font-size: 14px;
 }
 
+.live-odds-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid var(--panel-border);
+  padding: 10px 12px;
+}
+
+.live-odds-strip > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .metrics-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 12px;

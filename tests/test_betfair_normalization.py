@@ -51,6 +51,10 @@ class TestBetfairNormalization:
         assert result.subcategory == "soccer"
         assert result.event_start is not None
         assert result.status == "open"
+        assert result.total_matched == 125000.50
+        assert result.total_available == 45000.00
+        assert result.in_play is False
+        assert result.is_market_data_delayed is False
         assert isinstance(result.raw_payload, dict)
 
     def test_normalized_selections_have_required_fields(
@@ -87,8 +91,11 @@ class TestBetfairNormalization:
         arsenal = next(s for s in result.selections if s.selection_id == "1001")
         assert arsenal.selection_name == "Arsenal"
         assert arsenal.best_back == 2.48
+        assert arsenal.best_back_size == 500.00
         assert arsenal.best_lay == 2.52
+        assert arsenal.best_lay_size == 450.00
         assert arsenal.last_traded == 2.50
+        assert arsenal.total_matched == 50000.00
 
     def test_event_start_is_parsed_correctly(
         self, betfair_catalogue: dict, betfair_book: dict
@@ -109,6 +116,8 @@ class TestBetfairNormalization:
             assert selection.best_back is None
             assert selection.best_lay is None
             assert selection.last_traded is None
+            assert selection.best_back_size is None
+            assert selection.best_lay_size is None
 
     def test_category_inference_for_soccer(
         self, betfair_catalogue: dict, betfair_book: dict
@@ -176,3 +185,26 @@ class TestBetfairMarketDiscovery:
         assert len(snapshots) == 1
         assert snapshots[0].market_id == "1.234567890"
         assert snapshots[0].selections[0].exchange == "betfair"
+
+    def test_tennis_list_markets_uses_high_signal_market_types(
+        self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
+    ):
+        adapter = BetfairAdapter()
+        monkeypatch.setattr(adapter, "_ensure_session_token", lambda: None)
+
+        def fake_rpc_request(method: str, params: dict):
+            if method.endswith("listMarketCatalogue"):
+                market_filter = params["filter"]
+                assert market_filter["eventTypeIds"] == ["2"]
+                assert market_filter["marketTypeCodes"] == ["MATCH_ODDS", "SET_WINNER"]
+                return [betfair_catalogue]
+            if method.endswith("listMarketBook"):
+                assert params["priceProjection"]["priceData"] == ["EX_BEST_OFFERS", "EX_TRADED"]
+                return [betfair_book]
+            raise AssertionError(f"Unexpected method: {method}")
+
+        monkeypatch.setattr(adapter, "_rpc_request", fake_rpc_request)
+
+        snapshots = adapter.list_markets(category="tennis", max_results=3)
+
+        assert len(snapshots) == 1

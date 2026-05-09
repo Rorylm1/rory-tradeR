@@ -21,6 +21,10 @@ class SelectionSnapshot:
     event_name: str | None = None
     competition_name: str | None = None
     captured_at: datetime | None = None
+    best_back_size: float | None = None
+    best_lay_size: float | None = None
+    traded_volume: float | None = None
+    total_matched: float | None = None
     raw_payload: dict = field(default_factory=dict)
 
     @property
@@ -45,6 +49,10 @@ class MarketSnapshot:
     event_name: str | None = None
     competition_name: str | None = None
     captured_at: datetime | None = None
+    total_matched: float | None = None
+    total_available: float | None = None
+    in_play: bool | None = None
+    is_market_data_delayed: bool | None = None
     raw_payload: dict = field(default_factory=dict)
 
 

@@ -4,7 +4,7 @@ import os
 from typing import Annotated, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -14,6 +14,7 @@ from .service import (
     dashboard_overview,
     latest_markets,
     latest_strategy_evaluation,
+    live_odds,
     open_positions,
     pnl_series,
     recent_events,
@@ -104,6 +105,14 @@ def dashboard_recent_events() -> dict:
 @app.get("/api/dashboard/latest-markets", dependencies=[Depends(require_dashboard_token)])
 def dashboard_latest_markets() -> dict:
     return latest_markets()
+
+
+@app.get("/api/dashboard/live-odds", dependencies=[Depends(require_dashboard_token)])
+def dashboard_live_odds(
+    category: str = Query(default="tennis", min_length=1),
+    max_results: int = Query(default=25, ge=1, le=100),
+) -> dict:
+    return live_odds(category=category, max_results=max_results)
 
 
 @app.get("/api/dashboard/pnl-series", dependencies=[Depends(require_dashboard_token)])

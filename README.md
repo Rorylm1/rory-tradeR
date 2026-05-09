@@ -109,6 +109,22 @@ The first deployed dashboard uses a hybrid shape:
 
 Deployment notes live in [docs/trading/deployment/hetzner-vercel-dashboard.md](docs/trading/deployment/hetzner-vercel-dashboard.md).
 
+On the VPS, Betfair credentials and certificate files are configured with:
+
+```bash
+sudo BETFAIR_CERT_SOURCE=/tmp/client.crt \
+  BETFAIR_KEY_SOURCE=/tmp/client.key \
+  bash /opt/rory-trader/scripts/configure-betfair-vps.sh
+```
+
+To refresh the dashboard with live Betfair paper data, run one explicit paper session:
+
+```bash
+sudo systemctl start rory-trader-paper-session
+```
+
+That service is one-shot and disabled by default. It fetches current market data, creates paper-only fills, and writes the append-only journal for the dashboard.
+
 ## Data Safety
 
 Do not run `make setup` blindly.

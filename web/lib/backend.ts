@@ -66,6 +66,31 @@ export type MarketRow = {
   best_lay: number | null;
   last_traded: number | null;
   implied_probability: number | null;
+  best_back_size: number | null;
+  best_lay_size: number | null;
+  traded_volume: number | null;
+  selection_total_matched: number | null;
+  market_total_matched: number | null;
+  market_total_available: number | null;
+  in_play: boolean | null;
+  is_market_data_delayed: boolean | null;
+};
+
+export type DataQuality = {
+  market_count: number;
+  selection_count: number;
+  priced_selection_count: number;
+  missing_price_count: number;
+  liquid_selection_count: number;
+  tradeable_selection_count: number;
+  delayed_market_data_count: number;
+  in_play_market_count: number;
+  min_available_size: number;
+  min_market_total_matched: number;
+  price_missing_kill_switch: boolean;
+  liquidity_kill_switch: boolean;
+  delayed_data_kill_switch: boolean;
+  in_play_kill_switch: boolean;
 };
 
 export type LatestMarkets = {
@@ -73,7 +98,27 @@ export type LatestMarkets = {
   captured_at: string | null;
   market_count: number;
   selection_count: number;
+  data_quality: DataQuality;
   markets: MarketRow[];
+};
+
+export type LiveOdds = {
+  mode: "live";
+  read_only: boolean;
+  fetched_at: string;
+  category: string;
+  max_results: number;
+  betfair: {
+    ok: boolean | null;
+    approval_status: string;
+    message: string;
+  };
+  market_count: number;
+  selection_count: number;
+  data_quality: DataQuality;
+  markets: MarketRow[];
+  error: string | null;
+  live_execution_available: boolean;
 };
 
 export type PnlPoint = {
@@ -127,6 +172,7 @@ export type Health = {
     stale: boolean;
     stale_after_seconds: number;
   };
+  data_quality: DataQuality;
   supports_live_execution: boolean;
   live_enabled: boolean;
   live_execution_available: boolean;

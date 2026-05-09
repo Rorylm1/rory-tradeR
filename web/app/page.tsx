@@ -308,6 +308,8 @@ export default async function DashboardPage() {
     !health.data_quality.delayed_data_kill_switch &&
     !health.data_quality.in_play_kill_switch;
   const liveDisabled = !health.live_execution_available && !health.live_enabled;
+  const snapshotAgeMinutes =
+    health.snapshots.snapshot_age_seconds === null ? null : Math.round(health.snapshots.snapshot_age_seconds / 60);
 
   return (
     <main className="shell">
@@ -348,7 +350,7 @@ export default async function DashboardPage() {
       <section className="metrics-grid">
         <Metric label="Net PnL" value={money(overview.total_net_pnl)} icon={TrendingUp} />
         <Metric label="Open positions" value={String(overview.open_positions)} icon={Activity} />
-        <Metric label="Latest markets" value={String(latestMarkets.market_count)} icon={Database} />
+        <Metric label="Saved markets" value={String(latestMarkets.market_count)} icon={Database} />
         <Metric label="Usable odds" value={String(latestMarkets.data_quality.tradeable_selection_count)} icon={CheckCircle2} />
       </section>
 
@@ -365,14 +367,20 @@ export default async function DashboardPage() {
 
         <section className="panel">
           <div className="panel-heading">
-            <h2>Latest Markets</h2>
+            <h2>Saved Snapshot</h2>
             <p>
-              {latestMarkets.captured_at
-                ? `${latestMarkets.market_count} markets / ${latestMarkets.selection_count} runners`
+              {latestMarkets.captured_at && snapshotAgeMinutes !== null
+                ? `${latestMarkets.market_count} markets / ${latestMarkets.selection_count} runners / ${snapshotAgeMinutes} min old`
                 : "No snapshot yet"}
             </p>
           </div>
-          <MarketExplorer markets={latestMarkets.markets} />
+          {dataFresh ? (
+            <MarketExplorer markets={latestMarkets.markets} />
+          ) : (
+            <div className="empty-state">
+              Saved snapshot is stale. Use Live Odds above for current Betfair prices.
+            </div>
+          )}
         </section>
       </section>
 

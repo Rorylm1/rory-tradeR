@@ -25,6 +25,7 @@ class BetfairAdapter(ExchangeAdapter):
         self.cert_identity_url = "https://identitysso-cert.betfair.com/api/certlogin"
         self.interactive_identity_url = "https://identitysso.betfair.com/api/login"
         self.api_url = "https://api.betfair.com/exchange/betting/json-rpc/v1"
+        self.market_book_batch_size = int(os.getenv("BETFAIR_MARKET_BOOK_BATCH_SIZE", "10"))
         self._session_token: str | None = None
 
     def _event_type_ids_for_category(self, category: str | None) -> list[str]:
@@ -225,13 +226,18 @@ class BetfairAdapter(ExchangeAdapter):
             return []
 
         market_ids = [market["marketId"] for market in catalogue if market.get("marketId")]
-        books = self._rpc_request(
-            "SportsAPING/v1.0/listMarketBook",
-            {
-                "marketIds": market_ids,
-                "priceProjection": {"priceData": ["EX_BEST_OFFERS", "EX_TRADED"]},
-            },
-        )
+        books = []
+        batch_size = max(1, self.market_book_batch_size)
+        for index in range(0, len(market_ids), batch_size):
+            books.extend(
+                self._rpc_request(
+                    "SportsAPING/v1.0/listMarketBook",
+                    {
+                        "marketIds": market_ids[index : index + batch_size],
+                        "priceProjection": {"priceData": ["EX_BEST_OFFERS", "EX_TRADED"]},
+                    },
+                )
+            )
         books_by_market_id = {book.get("marketId"): book for book in books}
 
         snapshots = []

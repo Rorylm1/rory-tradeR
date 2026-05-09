@@ -218,6 +218,15 @@ def _market_rows_from_snapshots(snapshots: list[MarketSnapshot]) -> pd.DataFrame
     return df
 
 
+def _safe_error_message(exc: Exception) -> str:
+    text = str(exc)
+    if "TOO_MUCH_DATA" in text:
+        return "Betfair live odds fetch failed: TOO_MUCH_DATA. Try fewer markets or a smaller book batch."
+    if "INVALID_SESSION_INFORMATION" in text:
+        return "Betfair live odds fetch failed: INVALID_SESSION_INFORMATION. Re-authentication is required."
+    return f"Betfair live odds fetch failed: {exc.__class__.__name__}"
+
+
 def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
     synced_events = store.sync_journal()
@@ -398,7 +407,7 @@ def live_odds(category: str = "tennis", max_results: int = 25, limit: int = 160)
             "selection_count": 0,
             "data_quality": _data_quality_from_frame(pd.DataFrame()),
             "markets": [],
-            "error": f"Betfair live odds fetch failed: {exc.__class__.__name__}",
+            "error": _safe_error_message(exc),
             "live_execution_available": False,
         }
 

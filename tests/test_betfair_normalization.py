@@ -186,6 +186,33 @@ class TestBetfairMarketDiscovery:
         assert snapshots[0].market_id == "1.234567890"
         assert snapshots[0].selections[0].exchange == "betfair"
 
+    def test_list_markets_batches_market_book_requests(
+        self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
+    ):
+        adapter = BetfairAdapter()
+        adapter.market_book_batch_size = 2
+        monkeypatch.setattr(adapter, "_ensure_session_token", lambda: None)
+        catalogue = [
+            {**betfair_catalogue, "marketId": f"1.{index}"}
+            for index in range(5)
+        ]
+        book_calls = []
+
+        def fake_rpc_request(method: str, params: dict):
+            if method.endswith("listMarketCatalogue"):
+                return catalogue
+            if method.endswith("listMarketBook"):
+                book_calls.append(params["marketIds"])
+                return [{**betfair_book, "marketId": market_id} for market_id in params["marketIds"]]
+            raise AssertionError(f"Unexpected method: {method}")
+
+        monkeypatch.setattr(adapter, "_rpc_request", fake_rpc_request)
+
+        snapshots = adapter.list_markets(category="tennis", max_results=5)
+
+        assert len(snapshots) == 5
+        assert book_calls == [["1.0", "1.1"], ["1.2", "1.3"], ["1.4"]]
+
     def test_tennis_list_markets_uses_high_signal_market_types(
         self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
     ):

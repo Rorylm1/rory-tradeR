@@ -14,7 +14,7 @@ async function proxy(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: "Backend connection is not configured." }, { status: 503 });
   }
 
-  if (publicReadOnly && request.method !== "GET") {
+  if (publicReadOnly && request.method !== "GET" && request.method !== "HEAD") {
     return NextResponse.json({ error: "Dashboard is public read-only." }, { status: 403 });
   }
 

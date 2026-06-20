@@ -178,6 +178,32 @@ export type Health = {
   live_execution_available: boolean;
 };
 
+const emptyDataQuality: DataQuality = {
+  market_count: 0,
+  selection_count: 0,
+  priced_selection_count: 0,
+  missing_price_count: 0,
+  liquid_selection_count: 0,
+  tradeable_selection_count: 0,
+  delayed_market_data_count: 0,
+  in_play_market_count: 0,
+  min_available_size: 2,
+  min_market_total_matched: 100,
+  price_missing_kill_switch: true,
+  liquidity_kill_switch: true,
+  delayed_data_kill_switch: false,
+  in_play_kill_switch: false,
+};
+
+const emptyLatestMarkets: LatestMarkets = {
+  snapshot_path: null,
+  captured_at: null,
+  market_count: 0,
+  selection_count: 0,
+  data_quality: emptyDataQuality,
+  markets: [],
+};
+
 async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = process.env.TRADER_BACKEND_URL;
   const token = process.env.TRADER_BACKEND_TOKEN;
@@ -198,10 +224,42 @@ async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Backend request failed: ${response.status} ${body}`);
+    throw new Error(`Backend request failed for ${path}: ${response.status} ${body}`);
   }
 
   return response.json() as Promise<T>;
+}
+
+async function optionalBackendFetch<T>(path: string, fallback: T): Promise<T> {
+  try {
+    return await backendFetch<T>(path);
+  } catch (error) {
+    console.warn(error instanceof Error ? error.message : error);
+    return fallback;
+  }
+}
+
+function normalizeOverview(overview: Partial<Overview> | undefined): Overview {
+  return {
+    journal_events: 0,
+    executed_positions: 0,
+    open_positions: 0,
+    closed_positions: 0,
+    won_positions: 0,
+    lost_positions: 0,
+    void_positions: 0,
+    marked_open_positions: 0,
+    total_stake: 0,
+    total_commission_paid: 0,
+    total_realized_pnl: 0,
+    total_unrealized_pnl: 0,
+    total_net_pnl: 0,
+    latest_strategy_decisions: 0,
+    latest_strategy_acceptances: 0,
+    latest_strategy_rejections: 0,
+    latest_strategy_snapshots_seen: 0,
+    ...(overview ?? {}),
+  };
 }
 
 export async function getDashboardData() {
@@ -220,16 +278,17 @@ export async function getDashboardData() {
     backendFetch<{ positions: Position[] }>("/api/dashboard/open-positions"),
     backendFetch<{ positions: Position[] }>("/api/dashboard/closed-positions"),
     backendFetch<{ events: RecentEvent[] }>("/api/dashboard/recent-events"),
-    backendFetch<LatestMarkets>("/api/dashboard/latest-markets"),
-    backendFetch<{ points: PnlPoint[] }>("/api/dashboard/pnl-series"),
-    backendFetch<{ evaluation: StrategyEvaluation; decisions: StrategyDecision[] }>(
+    optionalBackendFetch<LatestMarkets>("/api/dashboard/latest-markets", emptyLatestMarkets),
+    optionalBackendFetch<{ points: PnlPoint[] }>("/api/dashboard/pnl-series", { points: [] }),
+    optionalBackendFetch<{ evaluation: StrategyEvaluation; decisions: StrategyDecision[] }>(
       "/api/dashboard/strategy-decisions",
+      { evaluation: null, decisions: [] },
     ),
   ]);
 
   return {
     health,
-    overview: overview.overview,
+    overview: normalizeOverview(overview.overview),
     openPositions: openPositions.positions,
     closedPositions: closedPositions.positions,
     recentEvents: recentEvents.events,

@@ -16,6 +16,10 @@ function unauthorized() {
 export function middleware(request: NextRequest) {
   const authEnabled = process.env.DASHBOARD_BASIC_AUTH_ENABLED === "true";
 
+  if (!authEnabled && request.method === "HEAD" && request.nextUrl.pathname.startsWith("/api/backend/")) {
+    return new NextResponse(null, { status: 200 });
+  }
+
   if (!authEnabled) {
     return NextResponse.next();
   }

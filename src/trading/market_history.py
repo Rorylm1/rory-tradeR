@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.common.paths import data_path
-from src.exchanges.common.models import MarketSnapshot
+from src.exchanges.common.models import MarketSnapshot, SelectionSnapshot
 
 
 def snapshot_history_dir(output_dir: Path | None = None) -> Path:
@@ -112,6 +112,68 @@ def latest_snapshot_marks(snapshot_dir: Path | None = None) -> pd.DataFrame:
     ]
 
 
+def load_market_snapshots(path: Path | str) -> list[MarketSnapshot]:
+    df = pd.read_parquet(path)
+    if df.empty:
+        return []
+
+    for column in ("captured_at", "event_start"):
+        if column in df.columns:
+            df[column] = pd.to_datetime(df[column], utc=True, errors="coerce")
+
+    snapshots: list[MarketSnapshot] = []
+    for market_id, market_rows in df.groupby("market_id", sort=True, dropna=False):
+        first = market_rows.sort_values(["captured_at", "selection_id"], na_position="last").iloc[0]
+        captured_at = _clean_value(first.get("captured_at"))
+        event_start = _clean_value(first.get("event_start"))
+        selections = []
+        for _, row in market_rows.sort_values("selection_id", na_position="last").iterrows():
+            selections.append(
+                SelectionSnapshot(
+                    exchange=str(_clean_value(row.get("exchange")) or ""),
+                    market_id=str(_clean_value(row.get("market_id")) or ""),
+                    selection_id=str(_clean_value(row.get("selection_id")) or ""),
+                    market_title=str(_clean_value(row.get("market_title")) or ""),
+                    selection_name=str(_clean_value(row.get("selection_name")) or ""),
+                    category=str(_clean_value(row.get("category")) or "unknown"),
+                    subcategory=str(_clean_value(row.get("subcategory")) or "unknown"),
+                    event_start=_clean_value(row.get("event_start")),
+                    best_back=_clean_value(row.get("best_back")),
+                    best_lay=_clean_value(row.get("best_lay")),
+                    last_traded=_clean_value(row.get("last_traded")),
+                    status=str(_clean_value(row.get("status")) or "unknown"),
+                    event_name=_clean_value(row.get("event_name")),
+                    competition_name=_clean_value(row.get("competition_name")),
+                    captured_at=_clean_value(row.get("captured_at")),
+                    best_back_size=_clean_value(row.get("best_back_size")),
+                    best_lay_size=_clean_value(row.get("best_lay_size")),
+                    traded_volume=_clean_value(row.get("traded_volume")),
+                    total_matched=_clean_value(row.get("selection_total_matched")),
+                )
+            )
+
+        snapshots.append(
+            MarketSnapshot(
+                exchange=str(_clean_value(first.get("exchange")) or ""),
+                market_id=str(_clean_value(market_id) or ""),
+                market_title=str(_clean_value(first.get("market_title")) or ""),
+                category=str(_clean_value(first.get("category")) or "unknown"),
+                subcategory=str(_clean_value(first.get("subcategory")) or "unknown"),
+                event_start=event_start,
+                status=str(_clean_value(first.get("status")) or "unknown"),
+                selections=selections,
+                event_name=_clean_value(first.get("event_name")),
+                competition_name=_clean_value(first.get("competition_name")),
+                captured_at=captured_at,
+                total_matched=_clean_value(first.get("market_total_matched")),
+                total_available=_clean_value(first.get("market_total_available")),
+                in_play=_clean_value(first.get("in_play")),
+                is_market_data_delayed=_clean_value(first.get("is_market_data_delayed")),
+            )
+        )
+    return snapshots
+
+
 def snapshot_rows_from_market(snapshot: MarketSnapshot) -> list[dict]:
     return flatten_market_snapshots([snapshot], captured_at=snapshot.captured_at)
 
@@ -122,3 +184,11 @@ def snapshot_payload(snapshot: MarketSnapshot) -> dict:
         snapshot.captured_at.isoformat() if snapshot.captured_at else datetime.now(timezone.utc).isoformat()
     )
     return payload
+
+
+def _clean_value(value):
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime()
+    return value

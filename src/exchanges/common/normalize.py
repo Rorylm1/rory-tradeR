@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 # Betfair event type IDs mapped to categories
 BETFAIR_EVENT_TYPE_MAP: dict[str, tuple[str, str]] = {
     "1": ("sports", "soccer"),
@@ -51,7 +49,7 @@ SMARKETS_SLUG_PREFIXES: dict[str, tuple[str, str]] = {
 }
 
 
-def infer_betfair_category(event_type_id: Optional[str]) -> tuple[str, str]:
+def infer_betfair_category(event_type_id: str | None) -> tuple[str, str]:
     """
     Infer category and subcategory from Betfair event type ID.
 
@@ -63,7 +61,7 @@ def infer_betfair_category(event_type_id: Optional[str]) -> tuple[str, str]:
     return BETFAIR_EVENT_TYPE_MAP.get(str(event_type_id), ("unknown", "unknown"))
 
 
-def infer_smarkets_category(full_slug: Optional[str]) -> tuple[str, str]:
+def infer_smarkets_category(full_slug: str | None) -> tuple[str, str]:
     """
     Infer category and subcategory from Smarkets event slug.
 
@@ -84,7 +82,7 @@ def infer_smarkets_category(full_slug: Optional[str]) -> tuple[str, str]:
     return ("unknown", "unknown")
 
 
-def normalize_status(raw_status: Optional[str], exchange: str) -> str:
+def normalize_status(raw_status: str | None, exchange: str) -> str:
     """
     Normalize market status to a consistent format.
 
@@ -121,7 +119,7 @@ def normalize_status(raw_status: Optional[str], exchange: str) -> str:
     return status_lower
 
 
-def smarkets_price_to_decimal(price_int: Optional[int]) -> Optional[float]:
+def smarkets_price_to_decimal(price_int: int | None) -> float | None:
     """
     Convert Smarkets price (basis points) to decimal odds.
 

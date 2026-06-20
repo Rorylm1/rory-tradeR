@@ -66,8 +66,21 @@ Runtime-state behavior:
 - proposal generation and paper fills should be reviewable from local journal output before any live promotion
 - deployed dashboard API access should require `RORY_TRADER_DASHBOARD_TOKEN`
 - Vercel may hold dashboard auth and backend API token values, but must not hold Betfair credentials
+- recurring VPS jobs may run only through the bounded `rory-trader-paper-session.service` and
+  `rory-trader-paper-session.timer`
+- the paper loop must log to journald, use `RORY_TRADER_LIVE_ENABLED=false`, and be disable-able with
+  `sudo systemctl disable --now rory-trader-paper-session.timer`
 - fresh Betfair odds may be shown in the dashboard from explicit paper snapshot runs or operator-triggered read-only live odds refreshes, but live order execution must remain unavailable
 - stale snapshots, missing executable prices, delayed market data, in-play markets, and thin books should be surfaced as dashboard guardrails before any operator review
+
+Paper risk defaults:
+- commission: `RORY_TRADER_PAPER_COMMISSION_RATE=0.02`
+- slippage: `RORY_TRADER_PAPER_SLIPPAGE_BPS=25`
+- max stake per paper trade: `RORY_TRADER_MAX_STAKE_PER_TRADE=10`
+- max open exposure per market: `RORY_TRADER_MAX_MARKET_EXPOSURE=20`
+- max daily realized loss before new paper fills stop: `RORY_TRADER_MAX_DAILY_LOSS=20`
+- stale snapshot kill switch: `RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS=1800`
+- minimum top-of-book available size: `RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE=2`
 
 Verified archive on `2026-04-19`:
 - archive path: `runtime/quarantine/data.tar.zst`
@@ -112,8 +125,21 @@ Milestone one is paper-only.
 
 That means:
 - no live order submission
-- no unattended strategy loops
+- no unattended live strategy loops
+- any recurring VPS loop is paper-only, bounded, logged, and easy to disable
 - no hidden execution path behind config defaults
+
+## Paper Position Resolution
+
+Resolve paper positions only after the underlying Betfair market has settled and the result is known from an ordinary
+account/operator review. Use:
+
+```bash
+uv run main.py resolve-paper <proposal_id> <won|lost|void> "source note"
+```
+
+The command appends a `resolution` event, calculates realized PnL after commission, and leaves the original proposal
+and fill events untouched. Do not edit the journal by hand unless performing a documented incident repair.
 
 ## Promotion Checklist For Any Future Live Mode
 

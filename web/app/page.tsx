@@ -360,6 +360,8 @@ export default async function DashboardPage() {
 
       <section className="metrics-grid">
         <Metric label="Net PnL" value={money(overview.total_net_pnl)} icon={TrendingUp} />
+        <Metric label="Realized PnL" value={money(overview.total_realized_pnl)} icon={CheckCircle2} />
+        <Metric label="Unrealized PnL" value={money(overview.total_unrealized_pnl)} icon={Activity} />
         <Metric label="Open positions" value={String(overview.open_positions)} icon={Activity} />
         <Metric label="Saved markets" value={String(latestMarkets.market_count)} icon={Database} />
         <Metric label="Usable odds" value={String(latestMarkets.data_quality.tradeable_selection_count)} icon={CheckCircle2} />

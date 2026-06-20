@@ -19,7 +19,7 @@ from src.trading.data_extract import extract_archive
 from src.trading.data_verify import verify_archive
 from src.trading.doctor import run_doctor
 from src.trading.journal import JournalStore, journal_performance_summary
-from src.trading.market_history import save_market_snapshots
+from src.trading.market_history import latest_snapshot_path, load_market_snapshots, save_market_snapshots
 from src.trading.paper_broker import PaperBroker
 from src.trading.research import inherited_market_priors
 from src.trading.strategy import BackPriceBucketStrategy
@@ -269,10 +269,83 @@ def paper(category: str = "sports", max_results: int = 25):
     print(f"journal_path: {journal.path}\n")
 
 
-def replay():
-    """Replay placeholder command for milestone one."""
-    print("\nReplay mode will use saved snapshots only.")
-    print("No live exchange calls should happen in replay mode.\n")
+def replay(snapshot_path: str | None = None, output_path: str | None = None):
+    """Replay a paper session from saved snapshots without live exchange calls."""
+    source_path = Path(snapshot_path) if snapshot_path else latest_snapshot_path()
+    if source_path is None:
+        print("\nReplay failed: no saved snapshots found.\n")
+        sys.exit(1)
+    if not source_path.exists():
+        print(f"\nReplay failed: snapshot file not found: {source_path}\n")
+        sys.exit(1)
+
+    snapshots = load_market_snapshots(source_path)
+    if not snapshots:
+        print(f"\nReplay failed: snapshot file contained no market rows: {source_path}\n")
+        sys.exit(1)
+
+    replay_clock = _replay_clock(source_path, snapshots)
+    replay_output = (
+        Path(output_path)
+        if output_path
+        else runtime_path("journals", "replays", f"{source_path.stem}.replay.jsonl")
+    )
+    if replay_output.exists():
+        print(f"\nReplay failed: output journal already exists: {replay_output}\n")
+        sys.exit(1)
+
+    strategy = BackPriceBucketStrategy()
+    broker = PaperBroker(journal_path=replay_output)
+    journal = JournalStore(path=replay_output, recorded_at=replay_clock)
+
+    journal.record_snapshot_collection(source_path, len(snapshots), "replay")
+    decisions = strategy.evaluate_decisions(snapshots, now=replay_clock)
+    journal.record_strategy_evaluation(strategy.definition, decisions, snapshots_seen=len(snapshots))
+
+    proposals = 0
+    duplicates = 0
+    paper_fills = 0
+
+    for signal in strategy.signals_from_decisions(decisions):
+        snapshot = next((item for item in snapshots if item.market_id == signal.market_id), None)
+        if snapshot is None:
+            continue
+
+        proposal = journal.record_proposal(signal, snapshot)
+        if proposal is None:
+            duplicates += 1
+            continue
+
+        proposals += 1
+        order_intent = strategy.to_order_intent(signal)
+        report = broker.execute(order_intent, snapshot, now=replay_clock)
+        journal.record_execution(proposal.proposal_id, report, mode="paper")
+        if report.accepted:
+            paper_fills += 1
+
+    print("\nReplay report:\n")
+    print(f"snapshot_path: {source_path}")
+    print(f"replay_clock: {replay_clock.isoformat()}")
+    print(f"output_journal: {replay_output}")
+    print(f"snapshots_replayed: {len(snapshots)}")
+    print(f"strategy: {strategy.definition.name}@{strategy.definition.version}")
+    print(f"strategy_decisions: {len(decisions)}")
+    print(f"strategy_acceptances: {sum(1 for decision in decisions if decision.accepted)}")
+    print(f"strategy_rejections: {sum(1 for decision in decisions if not decision.accepted)}")
+    print(f"proposals_created: {proposals}")
+    print(f"duplicate_proposals_skipped: {duplicates}")
+    print(f"paper_fills_created: {paper_fills}\n")
+
+
+def _replay_clock(source_path: Path, snapshots) -> datetime:
+    captured_times = [snapshot.captured_at for snapshot in snapshots if snapshot.captured_at is not None]
+    if captured_times:
+        clock = max(captured_times)
+    else:
+        clock = datetime.fromtimestamp(source_path.stat().st_mtime, tz=timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    return clock
 
 
 def research_priors():
@@ -506,7 +579,9 @@ def main():
         sys.exit(0)
 
     if command == "replay":
-        replay()
+        snapshot_path = sys.argv[2] if len(sys.argv) > 2 else None
+        output_path = sys.argv[3] if len(sys.argv) > 3 else None
+        replay(snapshot_path=snapshot_path, output_path=output_path)
         sys.exit(0)
 
     if command == "data-verify":

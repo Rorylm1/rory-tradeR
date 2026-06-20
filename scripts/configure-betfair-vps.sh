@@ -9,6 +9,8 @@ CERT_DIR="${CERT_DIR:-$APP_DIR/certs}"
 CERT_FILE="${BETFAIR_CERT_FILE:-$CERT_DIR/client.crt}"
 KEY_FILE="${BETFAIR_KEY_FILE:-$CERT_DIR/client.key}"
 UV_BIN="${UV_BIN:-$(command -v uv || true)}"
+PAPER_TIMER_NAME="${PAPER_TIMER_NAME:-rory-trader-paper-session.timer}"
+ENABLE_PAPER_TIMER="${ENABLE_PAPER_TIMER:-false}"
 
 log() {
   printf '[rory-trader-betfair] %s\n' "$*"
@@ -110,6 +112,19 @@ run_doctor() {
   sudo -H -u "$APP_USER" "$UV_BIN" --directory "$APP_DIR" run main.py doctor
 }
 
+maybe_enable_paper_timer() {
+  if [[ ! "$ENABLE_PAPER_TIMER" =~ ^(true|1|yes)$ ]]; then
+    return
+  fi
+  if ! systemctl cat "$PAPER_TIMER_NAME" >/dev/null 2>&1; then
+    log "Paper timer $PAPER_TIMER_NAME is not installed; run deploy-hetzner-dashboard.sh first"
+    return
+  fi
+
+  log "Enabling recurring paper timer $PAPER_TIMER_NAME"
+  systemctl enable --now "$PAPER_TIMER_NAME"
+}
+
 main() {
   require_root
 
@@ -135,6 +150,13 @@ main() {
   set_env_key "BETFAIR_KEY_FILE" "$KEY_FILE"
   set_env_key "RORY_TRADER_LIVE_ENABLED" "false"
   set_env_key "RORY_TRADER_RUNTIME_ROOT" "$APP_DIR/runtime"
+  set_env_key "RORY_TRADER_PAPER_COMMISSION_RATE" "${RORY_TRADER_PAPER_COMMISSION_RATE:-0.02}"
+  set_env_key "RORY_TRADER_PAPER_SLIPPAGE_BPS" "${RORY_TRADER_PAPER_SLIPPAGE_BPS:-25}"
+  set_env_key "RORY_TRADER_MAX_STAKE_PER_TRADE" "${RORY_TRADER_MAX_STAKE_PER_TRADE:-10}"
+  set_env_key "RORY_TRADER_MAX_MARKET_EXPOSURE" "${RORY_TRADER_MAX_MARKET_EXPOSURE:-20}"
+  set_env_key "RORY_TRADER_MAX_DAILY_LOSS" "${RORY_TRADER_MAX_DAILY_LOSS:-20}"
+  set_env_key "RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS" "${RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS:-1800}"
+  set_env_key "RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE" "${RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE:-2}"
 
   chmod 0640 "$ENV_FILE" "$CERT_FILE" "$KEY_FILE"
   chown root:"$APP_GROUP" "$ENV_FILE" "$CERT_FILE" "$KEY_FILE"
@@ -146,6 +168,7 @@ main() {
   log "Betfair secrets and certificate paths configured in $ENV_FILE"
   log "Certificate files are readable by $APP_USER through group $APP_GROUP and are not world-readable"
   run_doctor
+  maybe_enable_paper_timer
 }
 
 main "$@"

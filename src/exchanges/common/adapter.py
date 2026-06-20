@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional
 
 from src.exchanges.common.models import MarketSnapshot, OrderIntent, OrderQuote
 
@@ -25,7 +24,7 @@ class ExchangeAdapter(ABC):
         """Validate exchange readiness without exposing secrets."""
 
     @abstractmethod
-    def list_markets(self, category: Optional[str] = None, max_results: int = 10) -> list[MarketSnapshot]:
+    def list_markets(self, category: str | None = None, max_results: int = 10) -> list[MarketSnapshot]:
         """Fetch normalized market snapshots for the exchange."""
 
     @abstractmethod

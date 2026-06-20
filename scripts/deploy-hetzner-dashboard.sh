@@ -11,6 +11,13 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 SERVICE_NAME="${SERVICE_NAME:-rory-trader-dashboard}"
 PAPER_SERVICE_NAME="${PAPER_SERVICE_NAME:-rory-trader-paper-session}"
+PAPER_TIMER_NAME="${PAPER_TIMER_NAME:-${PAPER_SERVICE_NAME}.timer}"
+PAPER_TIMER_ENABLED="${PAPER_TIMER_ENABLED:-auto}"
+PAPER_TIMER_ON_CALENDAR="${PAPER_TIMER_ON_CALENDAR:-*:0/15}"
+PAPER_TIMER_RANDOMIZED_DELAY_SEC="${PAPER_TIMER_RANDOMIZED_DELAY_SEC:-60}"
+PAPER_SESSION_TIMEOUT_SECONDS="${PAPER_SESSION_TIMEOUT_SECONDS:-300}"
+PAPER_CATEGORY="${PAPER_CATEGORY:-sports}"
+PAPER_MAX_RESULTS="${PAPER_MAX_RESULTS:-25}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/.env}"
 CADDY_DROPIN="${CADDY_DROPIN:-/etc/caddy/conf.d/rory-trader-dashboard.caddy}"
 UV_SYNC_ARGS="${UV_SYNC_ARGS:---group dev}"
@@ -51,6 +58,9 @@ Environment:
   API_DOMAIN                      optional; configures Caddy when set
   VERCEL_ORIGIN                   optional but recommended for dashboard CORS
   RORY_TRADER_DASHBOARD_TOKEN     optional; generated if missing
+  PAPER_TIMER_ENABLED             auto, true, or false; default: auto
+  PAPER_TIMER_ON_CALENDAR         systemd OnCalendar value; default: *:0/15
+  PAPER_SESSION_TIMEOUT_SECONDS   one-shot paper service timeout; default: 300
 
 Secrets are written only to APP_DIR/.env on the VPS and are not echoed.
 USAGE
@@ -131,6 +141,12 @@ env_has_key() {
   [[ -f "$ENV_FILE" ]] && grep -Eq "^${key}=" "$ENV_FILE"
 }
 
+env_value() {
+  local key="$1"
+  [[ -f "$ENV_FILE" ]] || return 0
+  awk -F= -v key="$key" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "$ENV_FILE"
+}
+
 append_env_key() {
   local key="$1"
   local value="$2"
@@ -161,6 +177,13 @@ RORY_TRADER_LIVE_ENABLED=false
 RORY_TRADER_DASHBOARD_TOKEN=$DASHBOARD_TOKEN
 RORY_TRADER_DASHBOARD_ALLOWED_ORIGINS=$VERCEL_ORIGIN
 RORY_TRADER_DASHBOARD_STALE_AFTER_SECONDS=${RORY_TRADER_DASHBOARD_STALE_AFTER_SECONDS:-1800}
+RORY_TRADER_PAPER_COMMISSION_RATE=${RORY_TRADER_PAPER_COMMISSION_RATE:-0.02}
+RORY_TRADER_PAPER_SLIPPAGE_BPS=${RORY_TRADER_PAPER_SLIPPAGE_BPS:-25}
+RORY_TRADER_MAX_STAKE_PER_TRADE=${RORY_TRADER_MAX_STAKE_PER_TRADE:-10}
+RORY_TRADER_MAX_MARKET_EXPOSURE=${RORY_TRADER_MAX_MARKET_EXPOSURE:-20}
+RORY_TRADER_MAX_DAILY_LOSS=${RORY_TRADER_MAX_DAILY_LOSS:-20}
+RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS=${RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS:-1800}
+RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE=${RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE:-2}
 EOF
   else
     log "Preserving existing $ENV_FILE"
@@ -175,6 +198,27 @@ EOF
     fi
     if ! env_has_key "RORY_TRADER_RUNTIME_ROOT"; then
       append_env_key "RORY_TRADER_RUNTIME_ROOT" "$APP_DIR/runtime"
+    fi
+    if ! env_has_key "RORY_TRADER_PAPER_COMMISSION_RATE"; then
+      append_env_key "RORY_TRADER_PAPER_COMMISSION_RATE" "0.02"
+    fi
+    if ! env_has_key "RORY_TRADER_PAPER_SLIPPAGE_BPS"; then
+      append_env_key "RORY_TRADER_PAPER_SLIPPAGE_BPS" "25"
+    fi
+    if ! env_has_key "RORY_TRADER_MAX_STAKE_PER_TRADE"; then
+      append_env_key "RORY_TRADER_MAX_STAKE_PER_TRADE" "10"
+    fi
+    if ! env_has_key "RORY_TRADER_MAX_MARKET_EXPOSURE"; then
+      append_env_key "RORY_TRADER_MAX_MARKET_EXPOSURE" "20"
+    fi
+    if ! env_has_key "RORY_TRADER_MAX_DAILY_LOSS"; then
+      append_env_key "RORY_TRADER_MAX_DAILY_LOSS" "20"
+    fi
+    if ! env_has_key "RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS"; then
+      append_env_key "RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS" "1800"
+    fi
+    if ! env_has_key "RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE"; then
+      append_env_key "RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE" "2"
     fi
   fi
 
@@ -225,8 +269,9 @@ EOF
 
 install_paper_session_service() {
   local unit_path="/etc/systemd/system/${PAPER_SERVICE_NAME}.service"
+  local timer_path="/etc/systemd/system/${PAPER_TIMER_NAME}"
 
-  log "Writing disabled one-shot paper service $unit_path"
+  log "Writing bounded one-shot paper service $unit_path"
   cat > "$unit_path" <<EOF
 [Unit]
 Description=Rory TradeR One-Shot Paper Session
@@ -237,16 +282,77 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
-ExecStart=$APP_DIR/scripts/run-paper-session.sh sports 25
+ExecStart=$APP_DIR/scripts/run-paper-session.sh $PAPER_CATEGORY $PAPER_MAX_RESULTS
 User=$APP_USER
 Group=$APP_GROUP
+TimeoutStartSec=$PAPER_SESSION_TIMEOUT_SECONDS
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=$PAPER_SERVICE_NAME
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ReadWritePaths=$APP_DIR/runtime $APP_DIR/data
 EOF
 
+  log "Writing paper timer $timer_path"
+  cat > "$timer_path" <<EOF
+[Unit]
+Description=Run Rory TradeR paper session on a bounded recurring schedule
+
+[Timer]
+OnCalendar=$PAPER_TIMER_ON_CALENDAR
+RandomizedDelaySec=$PAPER_TIMER_RANDOMIZED_DELAY_SEC
+Persistent=false
+Unit=$PAPER_SERVICE_NAME.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
   systemctl daemon-reload
+
+  if should_enable_paper_timer; then
+    log "Enabling paper timer $PAPER_TIMER_NAME"
+    systemctl enable --now "$PAPER_TIMER_NAME"
+  else
+    log "Paper timer installed but not enabled"
+    systemctl disable --now "$PAPER_TIMER_NAME" >/dev/null 2>&1 || true
+  fi
+}
+
+has_betfair_config() {
+  local username password app_key use_cert cert_file key_file
+  username="$(env_value BETFAIR_USERNAME)"
+  password="$(env_value BETFAIR_PASSWORD)"
+  app_key="$(env_value BETFAIR_APP_KEY)"
+  use_cert="$(env_value BETFAIR_USE_CERT_LOGIN | tr '[:upper:]' '[:lower:]')"
+  cert_file="$(env_value BETFAIR_CERT_FILE)"
+  key_file="$(env_value BETFAIR_KEY_FILE)"
+
+  [[ -n "$username" && -n "$password" && -n "$app_key" ]] || return 1
+  if [[ "$use_cert" =~ ^(true|1|yes)$ ]]; then
+    [[ -f "$cert_file" && -f "$key_file" ]] || return 1
+  fi
+  return 0
+}
+
+should_enable_paper_timer() {
+  case "$(printf '%s' "$PAPER_TIMER_ENABLED" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes)
+      return 0
+      ;;
+    false|0|no)
+      return 1
+      ;;
+    auto|"")
+      has_betfair_config
+      return $?
+      ;;
+    *)
+      die "PAPER_TIMER_ENABLED must be auto, true, or false"
+      ;;
+  esac
 }
 
 configure_caddy() {
@@ -291,7 +397,9 @@ show_next_steps() {
 
   log "Set Vercel TRADER_BACKEND_TOKEN to the same token stored in $ENV_FILE"
   log "Set Vercel DASHBOARD_BASIC_AUTH_USER and DASHBOARD_BASIC_AUTH_PASSWORD before exposing the dashboard"
-  log "After Betfair credentials are configured, run one paper session manually: sudo systemctl start $PAPER_SERVICE_NAME"
+  log "Run one paper session manually: sudo systemctl start $PAPER_SERVICE_NAME"
+  log "Check recurring paper loop: sudo systemctl status $PAPER_TIMER_NAME && sudo systemctl list-timers '$PAPER_TIMER_NAME'"
+  log "Disable recurring paper loop: sudo systemctl disable --now $PAPER_TIMER_NAME"
 }
 
 main() {

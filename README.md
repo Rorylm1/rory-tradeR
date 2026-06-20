@@ -86,7 +86,7 @@ uv run main.py paper sports 25
 uv run main.py research-priors
 uv run main.py journal-report
 uv run main.py resolve-paper <proposal_id> <won|lost|void>
-uv run main.py replay
+uv run main.py replay [snapshot_parquet] [output_journal]
 uv run main.py dashboard-api 127.0.0.1 8000
 ```
 
@@ -97,6 +97,7 @@ Notes:
 - `research-priors` summarizes inherited Kalshi price-bucket priors
 - `journal-report` summarizes open positions, closed results, and PnL by strategy, price bucket, and time-to-event
 - `resolve-paper` manually settles a paper position by `proposal_id` and appends the outcome to the journal
+- `replay` runs strategy evaluation and paper execution from saved snapshot parquet only, writing a separate replay journal
 - `dashboard-api` serves the token-protected FastAPI backend for the deployed trade monitor
 
 ## Dashboard
@@ -117,13 +118,20 @@ sudo BETFAIR_CERT_SOURCE=/tmp/client.crt \
   bash /opt/rory-trader/scripts/configure-betfair-vps.sh
 ```
 
-To refresh the dashboard with live Betfair paper data, run one explicit paper session:
+To refresh the dashboard with Betfair paper data immediately, run one explicit paper session:
 
 ```bash
 sudo systemctl start rory-trader-paper-session
 ```
 
-That service is one-shot and disabled by default. It fetches current market data, creates paper-only fills, and writes the append-only journal for the dashboard.
+The deployed VPS can also run the bounded paper-only timer:
+
+```bash
+sudo systemctl status rory-trader-paper-session.timer
+sudo systemctl disable --now rory-trader-paper-session.timer
+```
+
+The service fetches current market data, creates paper-only fills, and writes the append-only journal for the dashboard. It never enables live Betfair order submission.
 
 ## Data Safety
 

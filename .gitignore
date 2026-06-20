@@ -9,6 +9,10 @@
 *.pfx
 *.md
 !README.md
+!AGENTS.md
+!spec.md
+!docs/trading/sports-betting.md
+!docs/trading/strategy-spec.md
 !docs/trading/deployment/hetzner-vercel-dashboard.md
 
 # Python-generated files

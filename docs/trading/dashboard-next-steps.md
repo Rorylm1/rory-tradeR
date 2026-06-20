@@ -16,6 +16,9 @@ Date: 2026-05-08
 - Added paper-strategy and paper-broker stale snapshot checks so stale or timestamp-missing data fails closed.
 - Narrowed tennis discovery to higher-signal market types by default: `MATCH_ODDS` and `SET_WINNER`.
 - Added a read-only live odds endpoint and dashboard panel for operator-triggered Betfair refreshes.
+- Added journal-aware paper risk controls for max stake, market exposure, daily loss, stale data, and thin books.
+- Added deterministic replay from saved snapshot parquet into separate replay journals.
+- Added an explicit bounded systemd timer shape for recurring paper-only sessions on the VPS.
 
 ## Current Behavior
 
@@ -37,7 +40,6 @@ The 2026-05-08 tennis paper run collected 25 markets and 98 runners. The strateg
 ## Recommended Next Steps
 
 1. Add odds history per market from saved snapshots so the dashboard can show price movement, not just the latest point.
-2. Add replay from saved snapshots so strategy changes can be compared deterministically.
-3. Add max exposure and max daily loss controls before any manual-assisted live discussion.
-4. Review live odds and paper results after the liquidity filters are active, then record a go/no-go note for whether tiny manual-assisted live work is justified.
-5. Later, consider scheduled paper-only monitoring. Keep live execution disabled until the paper evidence and safety controls justify a separate go/no-go decision.
+2. Review live odds and paper results after the liquidity filters are active, then record a go/no-go note for whether tiny manual-assisted live work is justified.
+3. Add a dashboard panel for recurring paper-loop timer status once VPS status is available through a safe read-only endpoint.
+4. Keep live execution disabled until the paper evidence and safety controls justify a separate go/no-go decision.

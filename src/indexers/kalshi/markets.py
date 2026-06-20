@@ -1,6 +1,5 @@
 """Indexer for Kalshi markets data."""
 
-from pathlib import Path
 from typing import Optional
 
 from src.common.indexer import Indexer

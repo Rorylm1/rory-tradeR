@@ -262,6 +262,32 @@ function normalizeOverview(overview: Partial<Overview> | undefined): Overview {
   };
 }
 
+function normalizeHealth(health: Partial<Health> | undefined): Health {
+  const source = health ?? {};
+  return {
+    status: source.status ?? "unknown",
+    checked_at: source.checked_at ?? new Date(0).toISOString(),
+    betfair: {
+      ok: source.betfair?.ok ?? null,
+      approval_status: source.betfair?.approval_status ?? "not_checked",
+      message: source.betfair?.message ?? "Backend health did not include Betfair status.",
+    },
+    snapshots: {
+      latest_snapshot_modified_at: source.snapshots?.latest_snapshot_modified_at ?? null,
+      snapshot_age_seconds: source.snapshots?.snapshot_age_seconds ?? null,
+      stale: source.snapshots?.stale ?? true,
+      stale_after_seconds: source.snapshots?.stale_after_seconds ?? 1800,
+    },
+    data_quality: {
+      ...emptyDataQuality,
+      ...(source.data_quality ?? {}),
+    },
+    supports_live_execution: source.supports_live_execution ?? false,
+    live_enabled: source.live_enabled ?? false,
+    live_execution_available: source.live_execution_available ?? false,
+  };
+}
+
 export async function getDashboardData() {
   const [
     health,
@@ -287,7 +313,7 @@ export async function getDashboardData() {
   ]);
 
   return {
-    health,
+    health: normalizeHealth(health),
     overview: normalizeOverview(overview.overview),
     openPositions: openPositions.positions,
     closedPositions: closedPositions.positions,

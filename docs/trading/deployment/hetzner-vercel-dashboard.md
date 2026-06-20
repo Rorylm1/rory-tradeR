@@ -9,6 +9,7 @@ This deployment keeps Betfair credentials on a Hetzner VPS and uses Vercel only 
 - VPS app directory: `/opt/rory-trader`
 - Dashboard API service: `rory-trader-dashboard`
 - One-shot paper service: `rory-trader-paper-session`
+- Recurring paper timer: `rory-trader-paper-session.timer`
 - Betfair cert login status on `2026-05-07`: `SUCCESS`
 - Latest verified dashboard state on `2026-05-07`: Betfair ready, data fresh, live disabled
 - Latest paper session collected 25 live Betfair snapshots and created 0 paper fills because the strategy filters found no eligible trades
@@ -48,9 +49,13 @@ sudo API_DOMAIN=api.your-domain.example \
 ```
 
 The script installs system packages, installs `uv`, clones or fast-forwards the repo in `/opt/rory-trader`,
-creates the VPS-only `.env` when missing, installs the dashboard `systemd` service, installs a disabled
-one-shot paper-session service, and configures a Caddy reverse proxy when `API_DOMAIN` is set. It does not
+creates the VPS-only `.env` when missing, installs the dashboard `systemd` service, installs a bounded
+one-shot paper-session service plus an explicit timer, and configures a Caddy reverse proxy when `API_DOMAIN` is set. It does not
 print dashboard tokens or Betfair credentials.
+
+The paper timer defaults to `PAPER_TIMER_ENABLED=auto`: it is enabled only when Betfair credentials are already present
+and any configured certificate files exist. Set `PAPER_TIMER_ENABLED=true` to force-enable it during a known-good deploy,
+or `PAPER_TIMER_ENABLED=false` to install it without enabling recurrence.
 
 The manual equivalent is:
 
@@ -83,6 +88,14 @@ RORY_TRADER_LIVE_ENABLED=false
 RORY_TRADER_DASHBOARD_TOKEN=<long-random-token>
 RORY_TRADER_DASHBOARD_ALLOWED_ORIGINS=https://<your-vercel-app>.vercel.app
 RORY_TRADER_DASHBOARD_STALE_AFTER_SECONDS=1800
+RORY_TRADER_PAPER_COMMISSION_RATE=0.02
+RORY_TRADER_PAPER_SLIPPAGE_BPS=25
+RORY_TRADER_MAX_STAKE_PER_TRADE=10
+RORY_TRADER_MAX_MARKET_EXPOSURE=20
+RORY_TRADER_MAX_DAILY_LOSS=20
+RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS=1800
+RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE=2
+RORY_TRADER_PAPER_SESSION_TIMEOUT_SECONDS=300
 ```
 
 Start locally on the VPS:
@@ -121,6 +134,62 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now rory-trader-dashboard
 sudo systemctl status rory-trader-dashboard
 ```
+
+## Paper Service And Timer
+
+Create `/etc/systemd/system/rory-trader-paper-session.service`:
+
+```ini
+[Unit]
+Description=Rory TradeR One-Shot Paper Session
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/rory-trader
+EnvironmentFile=/opt/rory-trader/.env
+ExecStart=/opt/rory-trader/scripts/run-paper-session.sh sports 25
+User=rory-trader
+Group=rory-trader
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rory-trader-paper-session
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/rory-trader/runtime /opt/rory-trader/data
+```
+
+Create `/etc/systemd/system/rory-trader-paper-session.timer`:
+
+```ini
+[Unit]
+Description=Run Rory TradeR paper session on a bounded recurring schedule
+
+[Timer]
+OnCalendar=*:0/15
+RandomizedDelaySec=60
+Persistent=false
+Unit=rory-trader-paper-session.service
+
+[Install]
+WantedBy=timers.target
+```
+
+Operate it:
+
+```bash
+sudo systemctl start rory-trader-paper-session
+sudo systemctl enable --now rory-trader-paper-session.timer
+sudo systemctl list-timers rory-trader-paper-session.timer
+sudo journalctl -u rory-trader-paper-session -n 80 --no-pager
+sudo systemctl disable --now rory-trader-paper-session.timer
+```
+
+The timer is deliberately paper-only. `scripts/run-paper-session.sh` refuses to run if `RORY_TRADER_LIVE_ENABLED`
+is true and the Betfair adapter reports `supports_live_execution: false`.
 
 ## Caddy
 
@@ -196,15 +265,16 @@ sudo ls -l /opt/rory-trader/.env /opt/rory-trader/certs/
 ## Live Paper Data
 
 The deployed dashboard reads from the VPS journal and latest Betfair snapshot files. Refresh those with an
-explicit, one-shot paper session:
+explicit, one-shot paper session or the recurring timer:
 
 ```bash
 sudo systemctl start rory-trader-paper-session
+sudo systemctl status rory-trader-paper-session.timer
 sudo journalctl -u rory-trader-paper-session -n 80 --no-pager
 ```
 
-This is deliberately not enabled as a timer. The command fetches current Betfair markets, saves snapshots,
-creates strategy proposals, simulates paper fills, and appends to `/opt/rory-trader/runtime/journals/trading_journal.jsonl`.
+The command fetches current Betfair markets, saves snapshots, creates strategy proposals, simulates paper fills,
+enforces stale/auth/exposure/loss controls, and appends to `/opt/rory-trader/runtime/journals/trading_journal.jsonl`.
 The dashboard should then show fresh snapshot status, journal activity, and any open paper positions.
 
 ## Safety Checks

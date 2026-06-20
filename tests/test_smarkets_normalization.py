@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from src.exchanges.smarkets.adapter import SmarketsAdapter
 from src.exchanges.common.models import MarketSnapshot, SelectionSnapshot
 from src.exchanges.common.normalize import smarkets_price_to_decimal
+from src.exchanges.smarkets.adapter import SmarketsAdapter
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "smarkets"
 

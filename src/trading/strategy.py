@@ -87,7 +87,7 @@ class Strategy(ABC):
         self.definition = definition
 
     @abstractmethod
-    def evaluate(self, snapshots: Iterable[MarketSnapshot]) -> list[StrategySignal]:
+    def evaluate(self, snapshots: Iterable[MarketSnapshot], *, now: datetime | None = None) -> list[StrategySignal]:
         """Evaluate snapshots and emit strategy signals."""
 
     def to_order_intent(self, signal: StrategySignal, exchange: str = "betfair") -> OrderIntent:
@@ -152,15 +152,22 @@ class BackPriceBucketStrategy(Strategy):
         self.config = config or BackPriceBucketConfig()
         super().__init__(self.config.to_definition())
 
-    def evaluate(self, snapshots: Iterable[MarketSnapshot]) -> list[StrategySignal]:
+    def evaluate(self, snapshots: Iterable[MarketSnapshot], *, now: datetime | None = None) -> list[StrategySignal]:
         return self.signals_from_decisions(self.evaluate_decisions(snapshots))
 
     @staticmethod
     def signals_from_decisions(decisions: Iterable[StrategyDecision]) -> list[StrategySignal]:
         return [decision.to_signal() for decision in decisions if decision.accepted and decision.selection_id]
 
-    def evaluate_decisions(self, snapshots: Iterable[MarketSnapshot]) -> list[StrategyDecision]:
-        now = datetime.now(timezone.utc)
+    def evaluate_decisions(
+        self,
+        snapshots: Iterable[MarketSnapshot],
+        *,
+        now: datetime | None = None,
+    ) -> list[StrategyDecision]:
+        now = now or datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
         decisions: list[StrategyDecision] = []
 
         def market_decision(snapshot: MarketSnapshot, reason_code: str, reason: str) -> StrategyDecision:

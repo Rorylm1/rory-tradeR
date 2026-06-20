@@ -43,14 +43,17 @@ class ProposedTrade:
 
 
 class JournalStore:
-    def __init__(self, path: Path | None = None):
+    def __init__(self, path: Path | None = None, *, recorded_at: datetime | None = None):
         self.path = Path(path) if path is not None else runtime_path("journals", "trading_journal.jsonl")
+        if recorded_at is not None and recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+        self.recorded_at = recorded_at
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _append(self, event_type: str, payload: dict[str, Any]) -> None:
         record = {
             "event_type": event_type,
-            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "recorded_at": (self.recorded_at or datetime.now(timezone.utc)).isoformat(),
             "payload": self._json_safe(payload),
         }
         with self.path.open("a", encoding="utf-8") as handle:

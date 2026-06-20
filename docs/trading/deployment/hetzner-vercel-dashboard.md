@@ -10,9 +10,12 @@ This deployment keeps Betfair credentials on a Hetzner VPS and uses Vercel only 
 - Dashboard API service: `rory-trader-dashboard`
 - One-shot paper service: `rory-trader-paper-session`
 - Recurring paper timer: `rory-trader-paper-session.timer`
-- Betfair cert login status on `2026-05-07`: `SUCCESS`
-- Latest verified dashboard state on `2026-05-07`: Betfair ready, data fresh, live disabled
-- Latest paper session collected 25 live Betfair snapshots and created 0 paper fills because the strategy filters found no eligible trades
+- Betfair cert login status on `2026-06-20`: `SUCCESS`
+- Latest verified dashboard state on `2026-06-20`: Betfair ready, data fresh, live disabled
+- Latest timer-verified paper session on `2026-06-20T18:30:46Z` collected 25 live Betfair snapshots and
+  created 0 paper fills because the strategy filters found no eligible trades
+- Latest recurring timer state on `2026-06-20T18:31:43Z`: active and enabled; previous run
+  `2026-06-20T18:30:43Z`, next run `2026-06-20T18:45:52Z`
 - Next infrastructure tidy-up: put an HTTPS domain in front of the VPS API and update Vercel `TRADER_BACKEND_URL`
 
 ## Architecture

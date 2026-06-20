@@ -45,6 +45,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
   return proxy(request, context);
 }
 
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
+}
+
 export async function POST(request: NextRequest, context: RouteContext) {
   return proxy(request, context);
 }

@@ -148,13 +148,19 @@ for SSH and local smoke checks, but avoid sending `TRADER_BACKEND_TOKEN` over pl
 Set Vercel environment variables:
 
 ```bash
+DASHBOARD_BASIC_AUTH_ENABLED=true
 DASHBOARD_BASIC_AUTH_USER=rory
 DASHBOARD_BASIC_AUTH_PASSWORD=<long-random-password>
+DASHBOARD_PUBLIC_READ_ONLY=false
 TRADER_BACKEND_URL=https://api.your-domain.example
 TRADER_BACKEND_TOKEN=<same value as RORY_TRADER_DASHBOARD_TOKEN>
 ```
 
 Do not add Betfair credentials to Vercel.
+
+To temporarily make the dashboard public while staying read-only, leave `DASHBOARD_BASIC_AUTH_ENABLED` unset or set
+it to `false`. In that mode the browser Basic Auth prompt is skipped and Vercel rejects proxied non-GET dashboard
+requests. To restore the prompt, set `DASHBOARD_BASIC_AUTH_ENABLED=true` with both username and password configured.
 
 ## Betfair Credentials And Certs
 

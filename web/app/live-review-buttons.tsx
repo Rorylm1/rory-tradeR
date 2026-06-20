@@ -6,6 +6,7 @@ import { useState } from "react";
 type Props = {
   proposalId: string;
   currentStatus?: string | null;
+  readOnly?: boolean;
 };
 
 const actions = [
@@ -26,11 +27,13 @@ const actions = [
   },
 ];
 
-export function LiveReviewButtons({ proposalId, currentStatus }: Props) {
+export function LiveReviewButtons({ proposalId, currentStatus, readOnly = false }: Props) {
   const [pending, setPending] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(currentStatus ?? null);
 
   async function submit(nextStatus: string) {
+    if (readOnly) return;
+
     setPending(nextStatus);
     const response = await fetch("/api/backend/api/live-review", {
       method: "POST",
@@ -57,8 +60,12 @@ export function LiveReviewButtons({ proposalId, currentStatus }: Props) {
             key={action.status}
             type="button"
             className={active ? "icon-button active" : "icon-button"}
-            disabled={pending !== null}
-            title={`${action.label}: records review status only, never places a live order`}
+            disabled={readOnly || pending !== null}
+            title={
+              readOnly
+                ? "Public read-only dashboard: review status cannot be changed"
+                : `${action.label}: records review status only, never places a live order`
+            }
             onClick={() => submit(action.status)}
           >
             <Icon size={16} />
@@ -69,4 +76,3 @@ export function LiveReviewButtons({ proposalId, currentStatus }: Props) {
     </div>
   );
 }
-

@@ -61,7 +61,15 @@ function Metric({
   );
 }
 
-function PositionTable({ positions, closed = false }: { positions: Position[]; closed?: boolean }) {
+function PositionTable({
+  positions,
+  closed = false,
+  publicReadOnly = false,
+}: {
+  positions: Position[];
+  closed?: boolean;
+  publicReadOnly?: boolean;
+}) {
   if (positions.length === 0) {
     return <div className="empty-state">No {closed ? "closed" : "open"} positions yet.</div>;
   }
@@ -102,6 +110,7 @@ function PositionTable({ positions, closed = false }: { positions: Position[]; c
                   <LiveReviewButtons
                     proposalId={position.proposal_id}
                     currentStatus={position.live_review?.status}
+                    readOnly={publicReadOnly}
                   />
                 </td>
               ) : null}
@@ -271,6 +280,8 @@ function StrategyDecisionTable({ decisions }: { decisions: StrategyDecision[] })
 }
 
 export default async function DashboardPage() {
+  const authEnabled = process.env.DASHBOARD_BASIC_AUTH_ENABLED === "true";
+  const publicReadOnly = !authEnabled || process.env.DASHBOARD_PUBLIC_READ_ONLY === "true";
   let data: Awaited<ReturnType<typeof getDashboardData>>;
   try {
     data = await getDashboardData();
@@ -409,7 +420,7 @@ export default async function DashboardPage() {
           <h2>Open Positions</h2>
           <p>{overview.marked_open_positions} marked from latest snapshot</p>
         </div>
-        <PositionTable positions={openPositions} />
+        <PositionTable positions={openPositions} publicReadOnly={publicReadOnly} />
       </section>
 
       <section className="split-grid">
@@ -426,7 +437,7 @@ export default async function DashboardPage() {
             <h2>Closed Positions</h2>
             <p>{overview.closed_positions} settled</p>
           </div>
-          <PositionTable positions={closedPositions.slice(0, 8)} closed />
+          <PositionTable positions={closedPositions.slice(0, 8)} closed publicReadOnly={publicReadOnly} />
         </section>
       </section>
     </main>

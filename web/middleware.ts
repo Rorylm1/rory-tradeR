@@ -14,6 +14,12 @@ function unauthorized() {
 }
 
 export function middleware(request: NextRequest) {
+  const authEnabled = process.env.DASHBOARD_BASIC_AUTH_ENABLED === "true";
+
+  if (!authEnabled) {
+    return NextResponse.next();
+  }
+
   const expectedUser = process.env.DASHBOARD_BASIC_AUTH_USER;
   const expectedPassword = process.env.DASHBOARD_BASIC_AUTH_PASSWORD;
 
@@ -37,4 +43,3 @@ export function middleware(request: NextRequest) {
 
   return NextResponse.next();
 }
-

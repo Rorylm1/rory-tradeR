@@ -121,11 +121,101 @@ export type LiveOdds = {
   live_execution_available: boolean;
 };
 
+export type PaperSessionRun = {
+  status: "completed" | "failed" | "timeout" | "rejected";
+  started_at: string;
+  finished_at: string;
+  category: string;
+  max_results: number;
+  returncode: number | null;
+  stdout: string;
+  stderr: string;
+  summary: {
+    snapshot_path?: string;
+    snapshots_collected?: number;
+    strategy?: string;
+    strategy_focus?: string;
+    strategy_decisions?: number;
+    strategy_acceptances?: number;
+    strategy_rejections?: number;
+    top_rejections?: string;
+    proposals_created?: number;
+    duplicate_proposals_skipped?: number;
+    paper_fills_created?: number;
+    journal_path?: string;
+  };
+  live_execution_available: boolean;
+};
+
 export type PnlPoint = {
   recorded_at: string;
   event_type: string;
   cumulative_realized_pnl: number;
   cumulative_stake: number;
+};
+
+export type PerformanceRow = {
+  strategy_name?: string | null;
+  strategy_version?: string | null;
+  price_bucket?: string | null;
+  time_window?: string | null;
+  executed_positions: number;
+  open_positions: number;
+  closed_positions: number;
+  won_positions: number;
+  avg_confidence: number | null;
+  total_stake: number;
+  total_commission_paid: number;
+  total_realized_pnl: number;
+  total_unrealized_pnl: number;
+  win_rate: number | null;
+  total_net_pnl: number;
+};
+
+export type PerformanceBreakdown = {
+  strategy: PerformanceRow[];
+  price_bucket: PerformanceRow[];
+  time_window: PerformanceRow[];
+};
+
+export type StrategyRule = {
+  label: string;
+  value: string;
+  detail: string;
+};
+
+export type SnapshotCollection = {
+  snapshot_path?: string;
+  snapshot_count?: number;
+  category?: string;
+  recorded_at: string;
+};
+
+export type StrategyContext = {
+  category: string;
+  definition: {
+    name: string;
+    version: string;
+    description: string;
+    fixed_stake: number;
+    min_hours_to_event: number;
+    max_hours_to_event: number;
+    min_back_price: number;
+    max_back_price: number;
+    max_spread: number;
+    max_snapshot_age_seconds: number;
+    min_market_total_matched: number;
+    min_best_back_size: number;
+    allowed_categories: string[];
+    allowed_subcategories: string[];
+    holding_period_hours: number;
+    kill_conditions: string[];
+    acceptance_min_trades: number;
+    acceptance_min_roi: number;
+    tags: string[];
+  };
+  rules: StrategyRule[];
+  recent_snapshot_collections: SnapshotCollection[];
 };
 
 export type StrategyEvaluation = {
@@ -202,6 +292,39 @@ const emptyLatestMarkets: LatestMarkets = {
   selection_count: 0,
   data_quality: emptyDataQuality,
   markets: [],
+};
+
+const emptyPerformance: PerformanceBreakdown = {
+  strategy: [],
+  price_bucket: [],
+  time_window: [],
+};
+
+const emptyStrategyContext: StrategyContext = {
+  category: "tennis",
+  definition: {
+    name: "unknown",
+    version: "unknown",
+    description: "Strategy context is unavailable.",
+    fixed_stake: 0,
+    min_hours_to_event: 0,
+    max_hours_to_event: 0,
+    min_back_price: 0,
+    max_back_price: 0,
+    max_spread: 0,
+    max_snapshot_age_seconds: 0,
+    min_market_total_matched: 0,
+    min_best_back_size: 0,
+    allowed_categories: [],
+    allowed_subcategories: [],
+    holding_period_hours: 0,
+    kill_conditions: [],
+    acceptance_min_trades: 0,
+    acceptance_min_roi: 0,
+    tags: [],
+  },
+  rules: [],
+  recent_snapshot_collections: [],
 };
 
 async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -297,6 +420,8 @@ export async function getDashboardData() {
     recentEvents,
     latestMarkets,
     pnlSeries,
+    performance,
+    strategyContext,
     strategyDecisions,
   ] = await Promise.all([
     backendFetch<Health>("/api/health"),
@@ -306,8 +431,10 @@ export async function getDashboardData() {
     backendFetch<{ events: RecentEvent[] }>("/api/dashboard/recent-events"),
     optionalBackendFetch<LatestMarkets>("/api/dashboard/latest-markets", emptyLatestMarkets),
     optionalBackendFetch<{ points: PnlPoint[] }>("/api/dashboard/pnl-series", { points: [] }),
+    optionalBackendFetch<PerformanceBreakdown>("/api/dashboard/performance", emptyPerformance),
+    optionalBackendFetch<StrategyContext>("/api/dashboard/strategy-context", emptyStrategyContext),
     optionalBackendFetch<{ evaluation: StrategyEvaluation; decisions: StrategyDecision[] }>(
-      "/api/dashboard/strategy-decisions",
+      "/api/dashboard/strategy-decisions?limit=100",
       { evaluation: null, decisions: [] },
     ),
   ]);
@@ -320,6 +447,8 @@ export async function getDashboardData() {
     recentEvents: recentEvents.events,
     latestMarkets,
     pnlPoints: pnlSeries.points,
+    performance,
+    strategyContext,
     strategyEvaluation: strategyDecisions.evaluation,
     strategyDecisions: strategyDecisions.decisions,
   };

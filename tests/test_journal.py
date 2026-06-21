@@ -233,3 +233,24 @@ def test_resolve_journal_position_rejects_double_resolution(tmp_path):
 
     with pytest.raises(ValueError, match="already resolved"):
         resolve_journal_position(proposal.proposal_id, "won", path=journal_path)
+
+
+def test_journal_store_records_learning_notes(tmp_path):
+    journal_path = tmp_path / "journal.jsonl"
+    store = JournalStore(journal_path)
+
+    store.record_learning("Avoid thin pre-match books after late withdrawals.", proposal_id="abc123", tags=["tennis"])
+
+    events = store.load_events()
+    assert len(events) == 1
+    assert events[0]["event_type"] == "learning"
+    assert events[0]["payload"]["proposal_id"] == "abc123"
+    assert events[0]["payload"]["note"] == "Avoid thin pre-match books after late withdrawals."
+    assert events[0]["payload"]["tags"] == ["tennis"]
+
+
+def test_journal_store_rejects_empty_learning_notes(tmp_path):
+    store = JournalStore(tmp_path / "journal.jsonl")
+
+    with pytest.raises(ValueError, match="cannot be empty"):
+        store.record_learning("   ")

@@ -3,7 +3,10 @@
 import { RefreshCw, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { LiveOdds } from "../lib/backend";
-import { MarketExplorer } from "./market-explorer";
+import { MarketTable } from "./market-table";
+
+const LIVE_ODDS_CATEGORY = "tennis";
+const LIVE_ODDS_MAX_RESULTS = 50;
 
 function dateTime(value: string | null | undefined) {
   if (!value) return "n/a";
@@ -22,7 +25,11 @@ export function LiveOddsPanel() {
     setPending(true);
     setError(null);
     try {
-      const response = await fetch("/api/backend/api/dashboard/live-odds?category=tennis&max_results=25", {
+      const params = new URLSearchParams({
+        category: LIVE_ODDS_CATEGORY,
+        max_results: String(LIVE_ODDS_MAX_RESULTS),
+      });
+      const response = await fetch(`/api/backend/api/dashboard/live-odds?${params}`, {
         cache: "no-store",
       });
       const payload = (await response.json()) as LiveOdds | { error?: string };
@@ -50,16 +57,16 @@ export function LiveOddsPanel() {
     <section className="panel">
       <div className="panel-heading">
         <div>
-          <h2>Live Odds</h2>
+          <h2>Tennis 50 Odds</h2>
           <p>
             {liveOdds
-              ? `${liveOdds.market_count} Betfair tennis markets fetched ${dateTime(liveOdds.fetched_at)}`
-              : "Read-only Betfair refresh. No live bet endpoint exists."}
+              ? `${liveOdds.market_count} Betfair ${liveOdds.category} markets fetched ${dateTime(liveOdds.fetched_at)}`
+              : `Read-only Betfair ${LIVE_ODDS_CATEGORY} / ${LIVE_ODDS_MAX_RESULTS} refresh. No live bet endpoint exists.`}
           </p>
         </div>
         <button className="icon-button" type="button" onClick={refresh} disabled={pending}>
           <RefreshCw size={16} />
-          <span>{pending ? "Refreshing" : "Refresh odds"}</span>
+          <span>{pending ? "Refreshing" : `Refresh ${LIVE_ODDS_CATEGORY} ${LIVE_ODDS_MAX_RESULTS}`}</span>
         </button>
       </div>
 
@@ -81,9 +88,9 @@ export function LiveOddsPanel() {
       {error ? <div className="empty-state">{error}</div> : null}
       {liveOdds?.error ? <div className="empty-state">{liveOdds.error}</div> : null}
       {liveOdds && liveOdds.markets.length > 0 ? (
-        <MarketExplorer markets={liveOdds.markets} />
+        <MarketTable markets={liveOdds.markets} limit={50} />
       ) : !error && !liveOdds?.error ? (
-        <div className="empty-state">Click refresh to fetch current read-only Betfair odds.</div>
+        <div className="empty-state">Click refresh to fetch current read-only Betfair tennis odds.</div>
       ) : null}
     </section>
   );

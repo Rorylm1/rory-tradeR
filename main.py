@@ -22,7 +22,7 @@ from src.trading.journal import JournalStore, journal_performance_summary
 from src.trading.market_history import latest_snapshot_path, load_market_snapshots, save_market_snapshots
 from src.trading.paper_broker import PaperBroker
 from src.trading.research import inherited_market_priors
-from src.trading.strategy import BackPriceBucketStrategy
+from src.trading.strategy import StrategyDecision, strategy_for_category
 
 load_dotenv()
 
@@ -203,7 +203,7 @@ def markets(category: str | None = None, max_results: int = 5):
         print("")
 
 
-def paper(category: str = "sports", max_results: int = 25):
+def paper(category: str = "tennis", max_results: int = 50):
     """Collect snapshots, emit strategy proposals, and simulate paper fills."""
     adapter = BetfairAdapter()
     validation = adapter.validate_credentials()
@@ -226,7 +226,7 @@ def paper(category: str = "sports", max_results: int = 25):
             selection.captured_at = captured_at
 
     snapshot_path = save_market_snapshots(snapshots, captured_at=captured_at)
-    strategy = BackPriceBucketStrategy()
+    strategy = strategy_for_category(category)
     broker = PaperBroker()
     journal = JournalStore()
 
@@ -259,10 +259,12 @@ def paper(category: str = "sports", max_results: int = 25):
 
     print(f"snapshot_path: {snapshot_path}")
     print(f"snapshots_collected: {len(snapshots)}")
+    print(f"strategy_focus: {category}")
     print(f"strategy: {strategy.definition.name}@{strategy.definition.version}")
     print(f"strategy_decisions: {len(decisions)}")
     print(f"strategy_acceptances: {sum(1 for decision in decisions if decision.accepted)}")
     print(f"strategy_rejections: {sum(1 for decision in decisions if not decision.accepted)}")
+    _print_decision_summary(decisions)
     print(f"proposals_created: {proposals}")
     print(f"duplicate_proposals_skipped: {duplicates}")
     print(f"paper_fills_created: {paper_fills}")
@@ -294,11 +296,13 @@ def replay(snapshot_path: str | None = None, output_path: str | None = None):
         print(f"\nReplay failed: output journal already exists: {replay_output}\n")
         sys.exit(1)
 
-    strategy = BackPriceBucketStrategy()
+    strategy_focus = _infer_snapshot_focus_category(snapshots)
+    strategy = strategy_for_category(strategy_focus)
     broker = PaperBroker(journal_path=replay_output)
     journal = JournalStore(path=replay_output, recorded_at=replay_clock)
 
-    journal.record_snapshot_collection(source_path, len(snapshots), "replay")
+    replay_category = f"replay:{strategy_focus}" if strategy_focus else "replay"
+    journal.record_snapshot_collection(source_path, len(snapshots), replay_category)
     decisions = strategy.evaluate_decisions(snapshots, now=replay_clock)
     journal.record_strategy_evaluation(strategy.definition, decisions, snapshots_seen=len(snapshots))
 
@@ -328,10 +332,12 @@ def replay(snapshot_path: str | None = None, output_path: str | None = None):
     print(f"replay_clock: {replay_clock.isoformat()}")
     print(f"output_journal: {replay_output}")
     print(f"snapshots_replayed: {len(snapshots)}")
+    print(f"strategy_focus: {strategy_focus or '(mixed/all)'}")
     print(f"strategy: {strategy.definition.name}@{strategy.definition.version}")
     print(f"strategy_decisions: {len(decisions)}")
     print(f"strategy_acceptances: {sum(1 for decision in decisions if decision.accepted)}")
     print(f"strategy_rejections: {sum(1 for decision in decisions if not decision.accepted)}")
+    _print_decision_summary(decisions)
     print(f"proposals_created: {proposals}")
     print(f"duplicate_proposals_skipped: {duplicates}")
     print(f"paper_fills_created: {paper_fills}\n")
@@ -346,6 +352,54 @@ def _replay_clock(source_path: Path, snapshots) -> datetime:
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=timezone.utc)
     return clock
+
+
+def _infer_snapshot_focus_category(snapshots) -> str | None:
+    subcategories: set[str] = set()
+    categories: set[str] = set()
+    for snapshot in snapshots:
+        if snapshot.category:
+            categories.add(snapshot.category.strip().lower())
+        if snapshot.subcategory:
+            subcategories.add(snapshot.subcategory.strip().lower())
+        for selection in snapshot.selections:
+            if selection.category:
+                categories.add(selection.category.strip().lower())
+            if selection.subcategory:
+                subcategories.add(selection.subcategory.strip().lower())
+
+    if subcategories == {"tennis"}:
+        return "tennis"
+    if len(categories) == 1:
+        return next(iter(categories))
+    return None
+
+
+def _print_decision_summary(decisions: list[StrategyDecision]) -> None:
+    rejection_counts: dict[str, int] = {}
+    accepted_subcategories: dict[str, int] = {}
+    decision_subcategories: dict[str, int] = {}
+
+    for decision in decisions:
+        subcategory = decision.subcategory or "unknown"
+        decision_subcategories[subcategory] = decision_subcategories.get(subcategory, 0) + 1
+        if decision.accepted:
+            accepted_subcategories[subcategory] = accepted_subcategories.get(subcategory, 0) + 1
+            continue
+        rejection_counts[decision.reason_code] = rejection_counts.get(decision.reason_code, 0) + 1
+
+    print(f"decision_subcategories: {_format_counts(decision_subcategories)}")
+    print(f"accepted_subcategories: {_format_counts(accepted_subcategories)}")
+    print(f"top_rejections: {_format_counts(rejection_counts)}")
+    if decisions and not any(decision.accepted for decision in decisions):
+        print("no_fill_summary: no accepted strategy decisions; paper broker was not invoked")
+
+
+def _format_counts(counts: dict[str, int], limit: int = 5) -> str:
+    if not counts:
+        return "(none)"
+    items = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    return ", ".join(f"{key}={value}" for key, value in items)
 
 
 def research_priors():
@@ -471,6 +525,45 @@ def journal_report():
             )
     print("")
 
+    print("Learning notes:")
+    events = summary["events"]
+    if events.empty or "event_type" not in events.columns:
+        print("  (none)")
+    else:
+        learnings = events[events["event_type"] == "learning"].sort_values("recorded_at", ascending=False).head(5)
+        if learnings.empty:
+            print("  (none)")
+        else:
+            for _, row in learnings.iterrows():
+                proposal_id = _display_cell(row.get("proposal_id"), default="general")
+                note = _display_cell(row.get("note"), default="")
+                print(f"  {proposal_id}: {note}")
+    print("")
+
+
+def _display_cell(value, default: str = "n/a") -> str:
+    if value is None or value != value:
+        return default
+    return str(value)
+
+
+def record_learning(proposal_id: str | None = None, note: str = ""):
+    """Append a paper-trading learning note to the journal."""
+    if not proposal_id or not note:
+        print("Usage: uv run main.py record-learning <proposal_id|general> <note>")
+        sys.exit(1)
+
+    normalized_proposal_id = None if proposal_id in {"general", "-", "none"} else proposal_id
+    try:
+        JournalStore().record_learning(note, proposal_id=normalized_proposal_id, tags=["operator_learning"])
+    except ValueError as exc:
+        print(f"\nLearning note failed: {exc}\n")
+        sys.exit(1)
+
+    print("\nLearning note recorded:\n")
+    print(f"proposal_id: {normalized_proposal_id or 'general'}")
+    print(f"journal_path: {runtime_path('journals', 'trading_journal.jsonl')}\n")
+
 
 def resolve_paper(proposal_id: str | None = None, outcome: str | None = None, note: str = ""):
     """Resolve an executed paper position manually and append the outcome to the journal."""
@@ -543,7 +636,7 @@ def main():
         print("\nUsage: uv run main.py <command>")
         print(
             "Commands: analyze, index, package, doctor, markets, paper, replay, "
-            "data-verify, data-extract, research-priors, journal-report, resolve-paper, dashboard-api"
+            "data-verify, data-extract, research-priors, journal-report, resolve-paper, record-learning, dashboard-api"
         )
         sys.exit(0)
 
@@ -573,8 +666,8 @@ def main():
         sys.exit(0)
 
     if command == "paper":
-        category = sys.argv[2] if len(sys.argv) > 2 else "sports"
-        max_results = int(sys.argv[3]) if len(sys.argv) > 3 else 25
+        category = sys.argv[2] if len(sys.argv) > 2 else "tennis"
+        max_results = int(sys.argv[3]) if len(sys.argv) > 3 else 50
         paper(category=category, max_results=max_results)
         sys.exit(0)
 
@@ -609,6 +702,12 @@ def main():
         outcome = sys.argv[3] if len(sys.argv) > 3 else None
         note = " ".join(sys.argv[4:]) if len(sys.argv) > 4 else ""
         resolve_paper(proposal_id, outcome, note)
+        sys.exit(0)
+
+    if command == "record-learning":
+        proposal_id = sys.argv[2] if len(sys.argv) > 2 else None
+        note = " ".join(sys.argv[3:]) if len(sys.argv) > 3 else ""
+        record_learning(proposal_id, note)
         sys.exit(0)
 
     if command == "dashboard-api":

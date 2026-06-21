@@ -187,6 +187,19 @@ class JournalStore:
             },
         )
 
+    def record_learning(self, note: str, *, proposal_id: str | None = None, tags: list[str] | None = None) -> None:
+        note = note.strip()
+        if not note:
+            raise ValueError("Learning note cannot be empty.")
+        self._append(
+            "learning",
+            {
+                "proposal_id": proposal_id,
+                "note": note,
+                "tags": tags or [],
+            },
+        )
+
     def record_execution(
         self,
         proposal_id: str,

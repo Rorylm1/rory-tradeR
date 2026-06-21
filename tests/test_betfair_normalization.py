@@ -224,9 +224,40 @@ class TestBetfairMarketDiscovery:
                 market_filter = params["filter"]
                 assert market_filter["eventTypeIds"] == ["2"]
                 assert market_filter["marketTypeCodes"] == ["MATCH_ODDS", "SET_WINNER"]
+                start_filter = market_filter["marketStartTime"]
+                from_time = datetime.fromisoformat(start_filter["from"].replace("Z", "+00:00"))
+                to_time = datetime.fromisoformat(start_filter["to"].replace("Z", "+00:00"))
+                assert 29 <= (from_time - datetime.now(timezone.utc)).total_seconds() / 60 <= 31
+                assert 71.9 <= (to_time - datetime.now(timezone.utc)).total_seconds() / 3600 <= 72.1
                 return [betfair_catalogue]
             if method.endswith("listMarketBook"):
                 assert params["priceProjection"]["priceData"] == ["EX_BEST_OFFERS", "EX_TRADED"]
+                return [betfair_book]
+            raise AssertionError(f"Unexpected method: {method}")
+
+        monkeypatch.setattr(adapter, "_rpc_request", fake_rpc_request)
+
+        snapshots = adapter.list_markets(category="tennis", max_results=3)
+
+        assert len(snapshots) == 1
+
+    def test_tennis_market_start_window_is_configurable(
+        self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
+    ):
+        adapter = BetfairAdapter()
+        monkeypatch.setenv("RORY_TRADER_BETFAIR_TENNIS_MIN_START_MINUTES", "90")
+        monkeypatch.setenv("RORY_TRADER_BETFAIR_TENNIS_MAX_START_HOURS", "24")
+        monkeypatch.setattr(adapter, "_ensure_session_token", lambda: None)
+
+        def fake_rpc_request(method: str, params: dict):
+            if method.endswith("listMarketCatalogue"):
+                start_filter = params["filter"]["marketStartTime"]
+                from_time = datetime.fromisoformat(start_filter["from"].replace("Z", "+00:00"))
+                to_time = datetime.fromisoformat(start_filter["to"].replace("Z", "+00:00"))
+                assert 89 <= (from_time - datetime.now(timezone.utc)).total_seconds() / 60 <= 91
+                assert 23.9 <= (to_time - datetime.now(timezone.utc)).total_seconds() / 3600 <= 24.1
+                return [betfair_catalogue]
+            if method.endswith("listMarketBook"):
                 return [betfair_book]
             raise AssertionError(f"Unexpected method: {method}")
 

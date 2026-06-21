@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -425,3 +426,35 @@ class BackPriceBucketStrategy(Strategy):
                 )
 
         return decisions
+
+
+def strategy_for_category(category: str | None) -> BackPriceBucketStrategy:
+    normalized = (category or "").strip().lower()
+    if normalized == "tennis":
+        return BackPriceBucketStrategy(
+            BackPriceBucketConfig(
+                name="betfair_tennis_pre_match_back_bucket",
+                description=(
+                    "Back-only pre-match tennis candidate that targets mid-priced runners in fresh, "
+                    "liquid Betfair tennis books."
+                ),
+                min_hours_to_event=_env_float("RORY_TRADER_TENNIS_MIN_HOURS_TO_EVENT", 0.5),
+                max_hours_to_event=_env_float("RORY_TRADER_TENNIS_MAX_HOURS_TO_EVENT", 72.0),
+                max_spread=_env_float("RORY_TRADER_TENNIS_MAX_SPREAD", 0.2),
+                min_market_total_matched=_env_float("RORY_TRADER_TENNIS_MIN_MARKET_TOTAL_MATCHED", 50.0),
+                allowed_subcategories=("tennis",),
+                tags=("betfair", "sports", "tennis", "pre_match", "back_only", "price_bucket"),
+            )
+        )
+
+    return BackPriceBucketStrategy()
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be numeric.") from exc

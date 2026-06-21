@@ -8,10 +8,11 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { getDashboardData, PnlPoint, Position, RecentEvent, StrategyDecision, StrategyEvaluation } from "../lib/backend";
+import { getDashboardData, PnlPoint, Position, RecentEvent } from "../lib/backend";
 import { LiveOddsPanel } from "./live-odds-panel";
 import { LiveReviewButtons } from "./live-review-buttons";
-import { MarketExplorer } from "./market-explorer";
+import { PaperSessionPanel } from "./paper-session-panel";
+import { WhatIsGoingOnPanel } from "./what-is-going-on-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -178,107 +179,6 @@ function PnlChart({ points }: { points: PnlPoint[] }) {
   );
 }
 
-function DecisionBadge({ accepted }: { accepted: boolean }) {
-  return (
-    <span className={accepted ? "decision-badge accepted" : "decision-badge rejected"}>
-      {accepted ? "Accepted" : "Rejected"}
-    </span>
-  );
-}
-
-function TradeFunnel({
-  evaluation,
-  overview,
-}: {
-  evaluation: StrategyEvaluation;
-  overview: Awaited<ReturnType<typeof getDashboardData>>["overview"];
-}) {
-  const stages = [
-    { label: "Markets scanned", value: evaluation?.snapshots_seen ?? overview.latest_strategy_snapshots_seen },
-    { label: "Decisions", value: evaluation?.decisions_count ?? overview.latest_strategy_decisions },
-    { label: "Rejected", value: evaluation?.rejected_count ?? overview.latest_strategy_rejections },
-    { label: "Accepted", value: evaluation?.accepted_count ?? overview.latest_strategy_acceptances },
-    { label: "Open positions", value: overview.open_positions },
-    { label: "Closed positions", value: overview.closed_positions },
-  ];
-  const rejectionCounts = evaluation?.rejection_counts ?? {};
-  const rejectionRows = Object.entries(rejectionCounts).sort((a, b) => b[1] - a[1]);
-
-  return (
-    <div className="funnel-wrap">
-      <div className="funnel-steps">
-        {stages.map((stage) => (
-          <div key={stage.label} className="funnel-step">
-            <span>{stage.label}</span>
-            <strong>{stage.value}</strong>
-          </div>
-        ))}
-      </div>
-      <div className="rejection-breakdown">
-        <span className="breakdown-title">Top rejection reasons</span>
-        {rejectionRows.length === 0 ? (
-          <span className="secondary-cell">No latest strategy evaluation yet.</span>
-        ) : (
-          rejectionRows.slice(0, 4).map(([reason, count]) => (
-            <div key={reason} className="breakdown-row">
-              <span>{reason}</span>
-              <strong>{count}</strong>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StrategyDecisionTable({ decisions }: { decisions: StrategyDecision[] }) {
-  if (decisions.length === 0) {
-    return <div className="empty-state">No strategy decisions recorded yet.</div>;
-  }
-
-  return (
-    <div className="table-wrap">
-      <table className="decision-table">
-        <thead>
-          <tr>
-            <th>Market</th>
-            <th>Selection</th>
-            <th>Decision</th>
-            <th>Price</th>
-            <th>Reason</th>
-            <th>Start</th>
-          </tr>
-        </thead>
-        <tbody>
-          {decisions.map((decision, index) => (
-            <tr key={`${decision.recorded_at}-${decision.market_id}-${decision.selection_id ?? "market"}-${index}`}>
-              <td>
-                <span className="primary-cell">{decision.market_title}</span>
-                <span className="secondary-cell">{decision.subcategory}</span>
-              </td>
-              <td>{decision.selection_name ?? "Market"}</td>
-              <td>
-                <DecisionBadge accepted={decision.accepted} />
-              </td>
-              <td>
-                <span className="primary-cell">{number(decision.best_back)}</span>
-                <span className="secondary-cell">
-                  lay {number(decision.best_lay)} / spread {number(decision.spread)}
-                </span>
-              </td>
-              <td>
-                <span className="primary-cell">{decision.reason_code}</span>
-                <span className="secondary-cell">{decision.reason}</span>
-              </td>
-              <td>{dateTime(decision.event_start)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export default async function DashboardPage() {
   const authEnabled = process.env.DASHBOARD_BASIC_AUTH_ENABLED === "true";
   const publicReadOnly = !authEnabled || process.env.DASHBOARD_PUBLIC_READ_ONLY === "true";
@@ -307,6 +207,8 @@ export default async function DashboardPage() {
     recentEvents,
     latestMarkets,
     pnlPoints,
+    performance,
+    strategyContext,
     strategyEvaluation,
     strategyDecisions,
   } = data;
@@ -319,17 +221,16 @@ export default async function DashboardPage() {
     !health.data_quality.delayed_data_kill_switch &&
     !health.data_quality.in_play_kill_switch;
   const liveDisabled = !health.live_execution_available && !health.live_enabled;
-  const snapshotAgeMinutes =
-    health.snapshots.snapshot_age_seconds === null ? null : Math.round(health.snapshots.snapshot_age_seconds / 60);
 
   return (
     <main className="shell">
       <header className="topbar">
         <div>
           <h1>Rory TradeR</h1>
-          <p>Betfair paper-trading monitor</p>
+          <p>Tennis Betfair paper monitor</p>
         </div>
         <div className="status-row">
+          <StatusPill ok label="Tennis paper" />
           <StatusPill ok={betfairReady} label={betfairReady ? "Betfair ready" : health.betfair.approval_status} />
           <StatusPill ok={dataFresh} label={dataFresh ? "Data fresh" : "Data stale"} />
           <StatusPill ok={oddsUsable} label={oddsUsable ? "Odds usable" : "Odds guarded"} />
@@ -367,54 +268,24 @@ export default async function DashboardPage() {
         <Metric label="Usable odds" value={String(latestMarkets.data_quality.tradeable_selection_count)} icon={CheckCircle2} />
       </section>
 
+      <PaperSessionPanel readOnly={publicReadOnly} />
       <LiveOddsPanel />
 
-      <section className="split-grid">
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>PnL Over Time</h2>
-            <p>Realized journal PnL</p>
-          </div>
-          <PnlChart points={pnlPoints} />
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <h2>Saved Snapshot</h2>
-            <p>
-              {latestMarkets.captured_at && snapshotAgeMinutes !== null
-                ? `${latestMarkets.market_count} markets / ${latestMarkets.selection_count} runners / ${snapshotAgeMinutes} min old`
-                : "No snapshot yet"}
-            </p>
-          </div>
-          {dataFresh ? (
-            <MarketExplorer markets={latestMarkets.markets} />
-          ) : (
-            <div className="empty-state">
-              Saved snapshot is stale. Use Live Odds above for current Betfair prices.
-            </div>
-          )}
-        </section>
-      </section>
+      <WhatIsGoingOnPanel
+        context={strategyContext}
+        evaluation={strategyEvaluation}
+        decisions={strategyDecisions}
+        latestMarkets={latestMarkets}
+        performance={performance}
+        overview={overview}
+      />
 
       <section className="panel">
         <div className="panel-heading">
-          <h2>Trade Funnel</h2>
-          <p>
-            {strategyEvaluation
-              ? `${strategyEvaluation.snapshots_seen} markets / ${strategyEvaluation.accepted_count} accepted / ${strategyEvaluation.rejected_count} rejected`
-              : "No evaluation yet"}
-          </p>
+          <h2>PnL Over Time</h2>
+          <p>Realized journal PnL</p>
         </div>
-        <TradeFunnel evaluation={strategyEvaluation} overview={overview} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Strategy Decisions</h2>
-          <p>{strategyDecisions.length} latest decision rows</p>
-        </div>
-        <StrategyDecisionTable decisions={strategyDecisions} />
+        <PnlChart points={pnlPoints} />
       </section>
 
       <section className="panel">

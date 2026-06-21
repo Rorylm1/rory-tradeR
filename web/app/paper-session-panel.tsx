@@ -3,17 +3,10 @@
 import { Play, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { PaperSessionRun } from "../lib/backend";
+import { formatDateTime } from "./format";
 
 const PAPER_CATEGORY = "tennis";
 const PAPER_MAX_RESULTS = 100;
-
-function dateTime(value: string | null | undefined) {
-  if (!value) return "n/a";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
 
 export function PaperSessionPanel({ readOnly = false }: { readOnly?: boolean }) {
   const [run, setRun] = useState<PaperSessionRun | null>(null);
@@ -61,7 +54,7 @@ export function PaperSessionPanel({ readOnly = false }: { readOnly?: boolean }) 
           <h2>Paper Session</h2>
           <p>
             {run
-              ? `${run.category} / ${run.max_results} finished ${dateTime(run.finished_at)}`
+              ? `${run.category} / ${run.max_results} finished ${formatDateTime(run.finished_at, true)}`
               : readOnly
                 ? "Public proof view. Paper-session controls are hidden."
                 : `Run one bounded ${PAPER_CATEGORY} paper session on the backend. No live order endpoint exists.`}

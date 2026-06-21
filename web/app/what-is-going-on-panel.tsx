@@ -10,6 +10,7 @@ import type {
   StrategyDecision,
   StrategyEvaluation,
 } from "../lib/backend";
+import { formatDateTime, formatMoney, formatNumber, formatPercent } from "./format";
 import { MarketTable } from "./market-table";
 
 type TabKey = "strategy" | "snapshots" | "rejections" | "learning";
@@ -20,33 +21,6 @@ const tabs: { key: TabKey; label: string; icon: typeof Activity }[] = [
   { key: "rejections", label: "Rejections", icon: ListFilter },
   { key: "learning", label: "Learning", icon: BarChart3 },
 ];
-
-function money(value: number | null | undefined) {
-  if (value === null || value === undefined) return "n/a";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function number(value: number | null | undefined, digits = 2) {
-  if (value === null || value === undefined) return "n/a";
-  return value.toFixed(digits);
-}
-
-function percent(value: number | null | undefined) {
-  if (value === null || value === undefined) return "n/a";
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function dateTime(value: string | null | undefined) {
-  if (!value) return "n/a";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
 
 function fileName(path: string | undefined) {
   if (!path) return "n/a";
@@ -167,16 +141,16 @@ function StrategyDecisionTable({
                 <DecisionBadge accepted={decision.accepted} />
               </td>
               <td>
-                <span className="primary-cell">{number(decision.best_back)}</span>
+                <span className="primary-cell">{formatNumber(decision.best_back)}</span>
                 <span className="secondary-cell">
-                  lay {number(decision.best_lay)} / spread {number(decision.spread)}
+                  lay {formatNumber(decision.best_lay)} / spread {formatNumber(decision.spread)}
                 </span>
               </td>
               <td>
                 <span className="primary-cell">{decision.reason_code}</span>
                 <span className="secondary-cell">{decision.reason}</span>
               </td>
-              <td>{dateTime(decision.event_start)}</td>
+              <td>{formatDateTime(decision.event_start)}</td>
             </tr>
           ))}
         </tbody>
@@ -241,11 +215,11 @@ function PerformanceTable({
                 </td>
                 <td>{row.executed_positions}</td>
                 <td>{row.closed_positions}</td>
-                <td>{percent(row.win_rate)}</td>
-                <td>{number(row.avg_confidence, 3)}</td>
-                <td>{money(row.total_realized_pnl)}</td>
-                <td>{money(row.total_unrealized_pnl)}</td>
-                <td>{money(row.total_net_pnl)}</td>
+                <td>{formatPercent(row.win_rate)}</td>
+                <td>{formatNumber(row.avg_confidence, 3)}</td>
+                <td>{formatMoney(row.total_realized_pnl)}</td>
+                <td>{formatMoney(row.total_unrealized_pnl)}</td>
+                <td>{formatMoney(row.total_net_pnl)}</td>
               </tr>
             ))}
           </tbody>
@@ -287,7 +261,7 @@ function StrategyTab({
         ))}
       </div>
       <div className="mini-metrics">
-        <MiniMetric label="Latest evaluation" value={dateTime(evaluation?.recorded_at)} />
+        <MiniMetric label="Latest evaluation" value={formatDateTime(evaluation?.recorded_at)} />
         <MiniMetric label="Accepted" value={evaluation?.accepted_count ?? 0} />
         <MiniMetric label="Rejected" value={evaluation?.rejected_count ?? 0} />
         <MiniMetric label="Snapshot max age" value={`${definition.max_snapshot_age_seconds}s`} />
@@ -305,7 +279,7 @@ function SnapshotsTab({
   return (
     <div className="insight-section">
       <div className="mini-metrics">
-        <MiniMetric label="Captured" value={dateTime(latestMarkets.captured_at)} />
+        <MiniMetric label="Captured" value={formatDateTime(latestMarkets.captured_at)} />
         <MiniMetric label="Markets" value={latestMarkets.market_count} />
         <MiniMetric label="Selections" value={latestMarkets.selection_count} />
         <MiniMetric label="Usable runners" value={quality.tradeable_selection_count} />
@@ -336,7 +310,7 @@ function SnapshotCollectionsTab({ context }: { context: StrategyContext }) {
         <tbody>
           {context.recent_snapshot_collections.map((snapshot) => (
             <tr key={`${snapshot.recorded_at}-${snapshot.snapshot_path}`}>
-              <td>{dateTime(snapshot.recorded_at)}</td>
+              <td>{formatDateTime(snapshot.recorded_at)}</td>
               <td>{snapshot.category ?? "n/a"}</td>
               <td>{snapshot.snapshot_count ?? "n/a"}</td>
               <td>{fileName(snapshot.snapshot_path)}</td>

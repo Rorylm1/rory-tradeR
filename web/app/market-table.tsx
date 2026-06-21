@@ -1,24 +1,5 @@
 import type { MarketRow } from "../lib/backend";
-
-function number(value: number | null | undefined, digits = 2) {
-  if (value === null || value === undefined) return "n/a";
-  return value.toFixed(digits);
-}
-
-function moneySize(value: number | null | undefined) {
-  if (value === null || value === undefined) return "n/a";
-  return new Intl.NumberFormat("en-GB", {
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function dateTime(value: string | null | undefined) {
-  if (!value) return "n/a";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
+import { formatDateTime, formatNumber, formatWholeNumber } from "./format";
 
 export function MarketTable({
   markets,
@@ -58,18 +39,18 @@ export function MarketTable({
                 <span className="secondary-cell">{row.subcategory}</span>
               </td>
               <td>
-                <span className="primary-cell">back {number(row.best_back)}</span>
+                <span className="primary-cell">back {formatNumber(row.best_back)}</span>
                 <span className="secondary-cell">
-                  lay {number(row.best_lay)} / last {number(row.last_traded)}
+                  lay {formatNumber(row.best_lay)} / last {formatNumber(row.last_traded)}
                 </span>
               </td>
               <td>
-                <span className="primary-cell">matched {moneySize(row.market_total_matched)}</span>
+                <span className="primary-cell">matched {formatWholeNumber(row.market_total_matched)}</span>
                 <span className="secondary-cell">
-                  back size {moneySize(row.best_back_size)} / lay size {moneySize(row.best_lay_size)}
+                  back size {formatWholeNumber(row.best_back_size)} / lay size {formatWholeNumber(row.best_lay_size)}
                 </span>
               </td>
-              <td>{dateTime(row.event_start)}</td>
+              <td>{formatDateTime(row.event_start)}</td>
               <td>
                 <span className={row.in_play ? "decision-badge rejected" : "decision-badge accepted"}>
                   {row.in_play ? "In-play" : "Pre-match"}

@@ -8,35 +8,15 @@ import {
   ShieldCheck,
   TrendingUp,
 } from "lucide-react";
-import { getDashboardData, PnlPoint, Position, RecentEvent } from "../lib/backend";
+import { getDashboardData, PnlPoint, RecentEvent } from "../lib/backend";
+import { formatDateTime, formatMoney } from "./format";
 import { LiveOddsPanel } from "./live-odds-panel";
-import { LiveReviewButtons } from "./live-review-buttons";
 import { PaperSessionPanel } from "./paper-session-panel";
+import { PositionTable } from "./position-table";
+import { TradingCockpit } from "./trading-cockpit";
 import { WhatIsGoingOnPanel } from "./what-is-going-on-panel";
 
 export const dynamic = "force-dynamic";
-
-function money(value: number | null | undefined) {
-  if (value === null || value === undefined) return "n/a";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function number(value: number | null | undefined, digits = 2) {
-  if (value === null || value === undefined) return "n/a";
-  return value.toFixed(digits);
-}
-
-function dateTime(value: string | null | undefined) {
-  if (!value) return "n/a";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
-}
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return <span className={ok ? "pill good" : "pill warn"}>{label}</span>;
@@ -62,67 +42,6 @@ function Metric({
   );
 }
 
-function PositionTable({
-  positions,
-  closed = false,
-  publicReadOnly = false,
-}: {
-  positions: Position[];
-  closed?: boolean;
-  publicReadOnly?: boolean;
-}) {
-  if (positions.length === 0) {
-    return <div className="empty-state">No {closed ? "closed" : "open"} positions yet.</div>;
-  }
-
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Event</th>
-            <th>Selection</th>
-            <th>Stake</th>
-            <th>Entry</th>
-            <th>{closed ? "Realized" : "Mark"}</th>
-            <th>{closed ? "Outcome" : "Unrealized"}</th>
-            <th>Start</th>
-            {!closed ? <th>Review</th> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {positions.map((position) => (
-            <tr key={position.proposal_id}>
-              <td>
-                <span className="primary-cell">{position.event_name ?? position.market_title}</span>
-                <span className="secondary-cell">{position.competition_name ?? position.market_title}</span>
-              </td>
-              <td>
-                <span className="primary-cell">{position.selection_name}</span>
-                <span className="secondary-cell">{position.side}</span>
-              </td>
-              <td>{money(position.stake)}</td>
-              <td>{number(position.fill_price)}</td>
-              <td>{closed ? money(position.realized_pnl) : number(position.mark_price)}</td>
-              <td>{closed ? position.resolved_outcome ?? "n/a" : money(position.unrealized_pnl)}</td>
-              <td>{dateTime(position.event_start)}</td>
-              {!closed ? (
-                <td>
-                  <LiveReviewButtons
-                    proposalId={position.proposal_id}
-                    currentStatus={position.live_review?.status}
-                    readOnly={publicReadOnly}
-                  />
-                </td>
-              ) : null}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 function EventFeed({ events }: { events: RecentEvent[] }) {
   if (events.length === 0) {
     return <div className="empty-state">No journal activity yet.</div>;
@@ -133,7 +52,7 @@ function EventFeed({ events }: { events: RecentEvent[] }) {
       {events.slice(0, 12).map((event, index) => (
         <li key={`${event.recorded_at}-${index}`}>
           <span className="event-type">{event.event_type}</span>
-          <span>{dateTime(event.recorded_at)}</span>
+          <span>{formatDateTime(event.recorded_at)}</span>
         </li>
       ))}
     </ol>
@@ -171,9 +90,9 @@ function PnlChart({ points }: { points: PnlPoint[] }) {
         ))}
       </svg>
       <div className="chart-meta">
-        <span>{dateTime(points[0].recorded_at)}</span>
-        <strong>{money(latest.cumulative_realized_pnl)}</strong>
-        <span>{dateTime(latest.recorded_at)}</span>
+        <span>{formatDateTime(points[0].recorded_at)}</span>
+        <strong>{formatMoney(latest.cumulative_realized_pnl)}</strong>
+        <span>{formatDateTime(latest.recorded_at)}</span>
       </div>
     </div>
   );
@@ -245,7 +164,7 @@ export default async function DashboardPage() {
         </div>
         <div>
           <Clock3 size={18} />
-          <span>Last snapshot: {dateTime(health.snapshots.latest_snapshot_modified_at)}</span>
+          <span>Last snapshot: {formatDateTime(health.snapshots.latest_snapshot_modified_at)}</span>
         </div>
         <div>
           <Database size={18} />
@@ -260,15 +179,21 @@ export default async function DashboardPage() {
       </section>
 
       <section className="metrics-grid">
-        <Metric label="Net PnL" value={money(overview.total_net_pnl)} icon={TrendingUp} />
-        <Metric label="Realized PnL" value={money(overview.total_realized_pnl)} icon={CheckCircle2} />
-        <Metric label="Unrealized PnL" value={money(overview.total_unrealized_pnl)} icon={Activity} />
+        <Metric label="Net PnL" value={formatMoney(overview.total_net_pnl)} icon={TrendingUp} />
+        <Metric label="Realized PnL" value={formatMoney(overview.total_realized_pnl)} icon={CheckCircle2} />
+        <Metric label="Unrealized PnL" value={formatMoney(overview.total_unrealized_pnl)} icon={Activity} />
         <Metric label="Open positions" value={String(overview.open_positions)} icon={Activity} />
         <Metric label="Saved markets" value={String(latestMarkets.market_count)} icon={Database} />
         <Metric label="Usable odds" value={String(latestMarkets.data_quality.tradeable_selection_count)} icon={CheckCircle2} />
       </section>
 
       <PaperSessionPanel readOnly={publicReadOnly} />
+      <TradingCockpit
+        openPositions={openPositions}
+        latestMarkets={latestMarkets}
+        overview={overview}
+        publicReadOnly={publicReadOnly}
+      />
       <LiveOddsPanel />
 
       <WhatIsGoingOnPanel
@@ -286,14 +211,6 @@ export default async function DashboardPage() {
           <p>Realized journal PnL</p>
         </div>
         <PnlChart points={pnlPoints} />
-      </section>
-
-      <section className="panel">
-        <div className="panel-heading">
-          <h2>Open Positions</h2>
-          <p>{overview.marked_open_positions} marked from latest snapshot</p>
-        </div>
-        <PositionTable positions={openPositions} publicReadOnly={publicReadOnly} />
       </section>
 
       <section className="split-grid">

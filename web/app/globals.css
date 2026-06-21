@@ -96,7 +96,7 @@ textarea {
 }
 
 .health-strip {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   margin-bottom: 12px;
 }
 
@@ -138,7 +138,7 @@ textarea {
 }
 
 .metrics-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 12px;
 }
 
@@ -146,7 +146,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 96px;
+  min-height: 84px;
   border-radius: 8px;
   padding: 16px;
 }
@@ -191,7 +191,6 @@ textarea {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
 }
 
 th,
@@ -267,6 +266,65 @@ tbody tr:hover {
 
 .split-grid {
   grid-template-columns: minmax(320px, 0.85fr) minmax(520px, 1.15fr);
+}
+
+.cockpit-grid {
+  display: grid;
+  grid-template-columns: minmax(620px, 1.05fr) minmax(500px, 0.95fr);
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.cockpit-grid .panel {
+  margin-bottom: 0;
+}
+
+.cockpit-heading {
+  min-height: 72px;
+}
+
+.cockpit-total {
+  min-width: 120px;
+  text-align: right;
+}
+
+.cockpit-total span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.cockpit-total strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.cockpit-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  border-bottom: 1px solid var(--panel-border);
+  padding: 10px 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.cockpit-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+}
+
+.position-table {
+  min-width: 1040px;
 }
 
 .event-feed {
@@ -634,6 +692,7 @@ tbody tr:hover {
   .health-strip,
   .metrics-grid,
   .split-grid,
+  .cockpit-grid,
   .learning-grid,
   .funnel-steps,
   .rule-grid,
@@ -645,5 +704,10 @@ tbody tr:hover {
 
   .strategy-summary {
     display: grid;
+  }
+
+  .cockpit-total {
+    min-width: 0;
+    text-align: left;
   }
 }

@@ -3,18 +3,11 @@
 import { RefreshCw, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { LiveOdds } from "../lib/backend";
+import { formatDateTime } from "./format";
 import { MarketTable } from "./market-table";
 
 const LIVE_ODDS_CATEGORY = "tennis";
 const LIVE_ODDS_MAX_RESULTS = 50;
-
-function dateTime(value: string | null | undefined) {
-  if (!value) return "n/a";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(new Date(value));
-}
 
 export function LiveOddsPanel() {
   const [liveOdds, setLiveOdds] = useState<LiveOdds | null>(null);
@@ -60,7 +53,7 @@ export function LiveOddsPanel() {
           <h2>Tennis 50 Odds</h2>
           <p>
             {liveOdds
-              ? `${liveOdds.market_count} Betfair ${liveOdds.category} markets fetched ${dateTime(liveOdds.fetched_at)}`
+              ? `${liveOdds.market_count} Betfair ${liveOdds.category} markets fetched ${formatDateTime(liveOdds.fetched_at, true)}`
               : `Read-only Betfair ${LIVE_ODDS_CATEGORY} / ${LIVE_ODDS_MAX_RESULTS} refresh. No live bet endpoint exists.`}
           </p>
         </div>

@@ -301,7 +301,10 @@ class BackPriceBucketStrategy(Strategy):
                     )
                 )
                 continue
-            if self.definition.allowed_subcategories and snapshot.subcategory not in self.definition.allowed_subcategories:
+            if (
+                self.definition.allowed_subcategories
+                and snapshot.subcategory not in self.definition.allowed_subcategories
+            ):
                 decisions.append(
                     market_decision(
                         snapshot,
@@ -310,10 +313,7 @@ class BackPriceBucketStrategy(Strategy):
                     )
                 )
                 continue
-            if (
-                snapshot.total_matched is not None
-                and snapshot.total_matched < self.definition.min_market_total_matched
-            ):
+            if snapshot.total_matched is not None and snapshot.total_matched < self.definition.min_market_total_matched:
                 decisions.append(
                     market_decision(
                         snapshot,

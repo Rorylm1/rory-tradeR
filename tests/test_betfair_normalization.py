@@ -31,16 +31,12 @@ def betfair_book() -> dict:
 class TestBetfairNormalization:
     """Test suite for Betfair market normalization."""
 
-    def test_normalize_market_returns_market_snapshot(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_normalize_market_returns_market_snapshot(self, betfair_catalogue: dict, betfair_book: dict):
         """normalize_market should return a MarketSnapshot."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
         assert isinstance(result, MarketSnapshot)
 
-    def test_normalized_market_has_required_fields(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_normalized_market_has_required_fields(self, betfair_catalogue: dict, betfair_book: dict):
         """Normalized market should have all required fields."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
 
@@ -57,9 +53,7 @@ class TestBetfairNormalization:
         assert result.is_market_data_delayed is False
         assert isinstance(result.raw_payload, dict)
 
-    def test_normalized_selections_have_required_fields(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_normalized_selections_have_required_fields(self, betfair_catalogue: dict, betfair_book: dict):
         """Each selection should have all required fields."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
 
@@ -81,9 +75,7 @@ class TestBetfairNormalization:
             assert selection.status == "open"
             assert isinstance(selection.raw_payload, dict)
 
-    def test_selection_prices_are_correct(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_selection_prices_are_correct(self, betfair_catalogue: dict, betfair_book: dict):
         """Selection prices should match fixture data."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
 
@@ -97,9 +89,7 @@ class TestBetfairNormalization:
         assert arsenal.last_traded == 2.50
         assert arsenal.total_matched == 50000.00
 
-    def test_event_start_is_parsed_correctly(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_event_start_is_parsed_correctly(self, betfair_catalogue: dict, betfair_book: dict):
         """Event start time should be parsed as UTC datetime."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
 
@@ -119,9 +109,7 @@ class TestBetfairNormalization:
             assert selection.best_back_size is None
             assert selection.best_lay_size is None
 
-    def test_category_inference_for_soccer(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_category_inference_for_soccer(self, betfair_catalogue: dict, betfair_book: dict):
         """Soccer event type should map to sports/soccer category."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
         assert result.category == "sports"
@@ -139,9 +127,7 @@ class TestBetfairNormalization:
         assert result.category == "unknown"
         assert result.subcategory == "unknown"
 
-    def test_raw_payload_preserved(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_raw_payload_preserved(self, betfair_catalogue: dict, betfair_book: dict):
         """Raw payload should preserve original API response."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
 
@@ -149,9 +135,7 @@ class TestBetfairNormalization:
         assert "book" in result.raw_payload
         assert result.raw_payload["catalogue"] == betfair_catalogue
 
-    def test_implied_probability_calculation(
-        self, betfair_catalogue: dict, betfair_book: dict
-    ):
+    def test_implied_probability_calculation(self, betfair_catalogue: dict, betfair_book: dict):
         """SelectionSnapshot.implied_probability should calculate correctly."""
         result = BetfairAdapter.normalize_market(betfair_catalogue, betfair_book)
 
@@ -163,9 +147,7 @@ class TestBetfairNormalization:
 class TestBetfairMarketDiscovery:
     """Test suite for Betfair market discovery using mocked API responses."""
 
-    def test_list_markets_returns_normalized_snapshots(
-        self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
-    ):
+    def test_list_markets_returns_normalized_snapshots(self, betfair_catalogue: dict, betfair_book: dict, monkeypatch):
         adapter = BetfairAdapter()
         monkeypatch.setattr(adapter, "_ensure_session_token", lambda: None)
 
@@ -186,16 +168,11 @@ class TestBetfairMarketDiscovery:
         assert snapshots[0].market_id == "1.234567890"
         assert snapshots[0].selections[0].exchange == "betfair"
 
-    def test_list_markets_batches_market_book_requests(
-        self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
-    ):
+    def test_list_markets_batches_market_book_requests(self, betfair_catalogue: dict, betfair_book: dict, monkeypatch):
         adapter = BetfairAdapter()
         adapter.market_book_batch_size = 2
         monkeypatch.setattr(adapter, "_ensure_session_token", lambda: None)
-        catalogue = [
-            {**betfair_catalogue, "marketId": f"1.{index}"}
-            for index in range(5)
-        ]
+        catalogue = [{**betfair_catalogue, "marketId": f"1.{index}"} for index in range(5)]
         book_calls = []
 
         def fake_rpc_request(method: str, params: dict):
@@ -241,9 +218,7 @@ class TestBetfairMarketDiscovery:
 
         assert len(snapshots) == 1
 
-    def test_tennis_market_start_window_is_configurable(
-        self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
-    ):
+    def test_tennis_market_start_window_is_configurable(self, betfair_catalogue: dict, betfair_book: dict, monkeypatch):
         adapter = BetfairAdapter()
         monkeypatch.setenv("RORY_TRADER_BETFAIR_TENNIS_MIN_START_MINUTES", "90")
         monkeypatch.setenv("RORY_TRADER_BETFAIR_TENNIS_MAX_START_HOURS", "24")

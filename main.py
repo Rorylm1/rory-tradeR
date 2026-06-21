@@ -288,9 +288,7 @@ def replay(snapshot_path: str | None = None, output_path: str | None = None):
 
     replay_clock = _replay_clock(source_path, snapshots)
     replay_output = (
-        Path(output_path)
-        if output_path
-        else runtime_path("journals", "replays", f"{source_path.stem}.replay.jsonl")
+        Path(output_path) if output_path else runtime_path("journals", "replays", f"{source_path.stem}.replay.jsonl")
     )
     if replay_output.exists():
         print(f"\nReplay failed: output journal already exists: {replay_output}\n")

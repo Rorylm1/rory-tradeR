@@ -44,16 +44,12 @@ def quotes_by_contract(smarkets_quotes: dict) -> dict:
 class TestSmarketsNormalization:
     """Test suite for Smarkets market normalization."""
 
-    def test_normalize_market_returns_market_snapshot(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_normalize_market_returns_market_snapshot(self, single_market: dict, quotes_by_contract: dict):
         """normalize_market should return a MarketSnapshot."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
         assert isinstance(result, MarketSnapshot)
 
-    def test_normalized_market_has_required_fields(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_normalized_market_has_required_fields(self, single_market: dict, quotes_by_contract: dict):
         """Normalized market should have all required fields."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
 
@@ -66,9 +62,7 @@ class TestSmarketsNormalization:
         assert result.status == "open"
         assert isinstance(result.raw_payload, dict)
 
-    def test_normalized_selections_have_required_fields(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_normalized_selections_have_required_fields(self, single_market: dict, quotes_by_contract: dict):
         """Each selection should have all required fields."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
 
@@ -90,9 +84,7 @@ class TestSmarketsNormalization:
             assert selection.status == "open"
             assert isinstance(selection.raw_payload, dict)
 
-    def test_selection_prices_are_correct(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_selection_prices_are_correct(self, single_market: dict, quotes_by_contract: dict):
         """Selection prices should match fixture data (converted from basis points)."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
 
@@ -106,9 +98,7 @@ class TestSmarketsNormalization:
         # 2500 basis points = 10000/2500 = 4.0 decimal odds
         assert arsenal.last_traded == pytest.approx(4.0, rel=0.01)
 
-    def test_event_start_is_parsed_correctly(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_event_start_is_parsed_correctly(self, single_market: dict, quotes_by_contract: dict):
         """Event start time should be parsed as UTC datetime."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
 
@@ -126,9 +116,7 @@ class TestSmarketsNormalization:
             assert selection.best_lay is None
             assert selection.last_traded is None
 
-    def test_category_inference_from_slug(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_category_inference_from_slug(self, single_market: dict, quotes_by_contract: dict):
         """Category should be inferred from event slug."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
         assert result.category == "sports"
@@ -147,9 +135,7 @@ class TestSmarketsNormalization:
         assert result.category == "unknown"
         assert result.subcategory == "unknown"
 
-    def test_raw_payload_preserved(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_raw_payload_preserved(self, single_market: dict, quotes_by_contract: dict):
         """Raw payload should preserve original API response."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
 
@@ -157,9 +143,7 @@ class TestSmarketsNormalization:
         assert "quotes" in result.raw_payload
         assert result.raw_payload["market"] == single_market
 
-    def test_implied_probability_calculation(
-        self, single_market: dict, quotes_by_contract: dict
-    ):
+    def test_implied_probability_calculation(self, single_market: dict, quotes_by_contract: dict):
         """SelectionSnapshot.implied_probability should calculate correctly."""
         result = SmarketsAdapter.normalize_market(single_market, quotes_by_contract)
 

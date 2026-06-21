@@ -198,9 +198,7 @@ def _build_positions(path: Path | None = None, snapshot_dir: Path | None = None)
         labels=["<=1.5", "1.5-2.0", "2.0-3.0", "3.0-5.0", "5.0-10.0", "10.0+"],
         include_lowest=True,
     )
-    positions["hours_to_event"] = (
-        (positions["event_start"] - positions["created_at"]).dt.total_seconds() / 3600
-    )
+    positions["hours_to_event"] = (positions["event_start"] - positions["created_at"]).dt.total_seconds() / 3600
     positions["time_window"] = pd.cut(
         positions["hours_to_event"],
         bins=[0, 6, 12, 24, 48, 96, 999999],

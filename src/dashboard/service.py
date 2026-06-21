@@ -133,11 +133,15 @@ def _data_quality_from_frame(
     min_available_size: float | None = None,
     min_market_total_matched: float | None = None,
 ) -> dict[str, Any]:
-    min_available_size = min_available_size if min_available_size is not None else float(
-        os.getenv(MIN_AVAILABLE_SIZE_ENV_VAR, str(DEFAULT_MIN_AVAILABLE_SIZE))
+    min_available_size = (
+        min_available_size
+        if min_available_size is not None
+        else float(os.getenv(MIN_AVAILABLE_SIZE_ENV_VAR, str(DEFAULT_MIN_AVAILABLE_SIZE)))
     )
-    min_market_total_matched = min_market_total_matched if min_market_total_matched is not None else float(
-        os.getenv(MIN_MARKET_TOTAL_MATCHED_ENV_VAR, str(DEFAULT_MIN_MARKET_TOTAL_MATCHED))
+    min_market_total_matched = (
+        min_market_total_matched
+        if min_market_total_matched is not None
+        else float(os.getenv(MIN_MARKET_TOTAL_MATCHED_ENV_VAR, str(DEFAULT_MIN_MARKET_TOTAL_MATCHED)))
     )
     if df.empty:
         return {
@@ -170,7 +174,9 @@ def _data_quality_from_frame(
 
     priced = df[["best_back", "best_lay", "last_traded"]].notna().any(axis=1)
     executable = df[["best_back", "best_lay"]].notna().all(axis=1)
-    has_size = df["best_back_size"].isna() | (pd.to_numeric(df["best_back_size"], errors="coerce") >= min_available_size)
+    has_size = df["best_back_size"].isna() | (
+        pd.to_numeric(df["best_back_size"], errors="coerce") >= min_available_size
+    )
     has_market_liquidity = df["market_total_matched"].isna() | (
         pd.to_numeric(df["market_total_matched"], errors="coerce") >= min_market_total_matched
     )

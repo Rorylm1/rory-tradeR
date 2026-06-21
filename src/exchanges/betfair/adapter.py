@@ -84,10 +84,12 @@ class BetfairAdapter(ExchangeAdapter):
             ("BETFAIR_APP_KEY", self.app_key),
         ]
         if self.use_cert_login:
-            required.extend([
-                ("BETFAIR_CERT_FILE", self.cert_file),
-                ("BETFAIR_KEY_FILE", self.key_file),
-            ])
+            required.extend(
+                [
+                    ("BETFAIR_CERT_FILE", self.cert_file),
+                    ("BETFAIR_KEY_FILE", self.key_file),
+                ]
+            )
         for field_name, value in required:
             if not value:
                 missing.append(field_name)

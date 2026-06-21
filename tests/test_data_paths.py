@@ -22,7 +22,9 @@ def test_get_data_root_honors_explicit_env_override(tmp_path, monkeypatch):
 
     monkeypatch.setattr(paths, "REPO_ROOT", repo_root)
     monkeypatch.setattr(paths, "DEFAULT_DATA_ROOT", repo_root / "data")
-    monkeypatch.setattr(paths, "EXTRACTED_LITE_DATA_ROOT", repo_root / "runtime" / "quarantine" / "extracted-lite" / "data")
+    monkeypatch.setattr(
+        paths, "EXTRACTED_LITE_DATA_ROOT", repo_root / "runtime" / "quarantine" / "extracted-lite" / "data"
+    )
     monkeypatch.setenv(paths.DATA_ROOT_ENV_VAR, "custom-data")
 
     assert paths.get_data_root() == configured.resolve()

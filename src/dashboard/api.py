@@ -16,9 +16,12 @@ from .service import (
     latest_strategy_evaluation,
     live_odds,
     open_positions,
+    performance_breakdown,
     pnl_series,
     recent_events,
     recent_strategy_decisions,
+    run_paper_session,
+    strategy_context,
 )
 from .store import DashboardStore
 
@@ -77,6 +80,11 @@ class LiveReviewRequest(BaseModel):
     note: str = ""
 
 
+class PaperSessionRequest(BaseModel):
+    category: str = Field(default="tennis", min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    max_results: int = Field(default=100, ge=1, le=100)
+
+
 @app.get("/api/health", dependencies=[Depends(require_dashboard_token)])
 def health() -> dict:
     return dashboard_health()
@@ -120,12 +128,27 @@ def dashboard_pnl_series() -> dict:
     return pnl_series()
 
 
+@app.get("/api/dashboard/performance", dependencies=[Depends(require_dashboard_token)])
+def dashboard_performance() -> dict:
+    return performance_breakdown()
+
+
+@app.get("/api/dashboard/strategy-context", dependencies=[Depends(require_dashboard_token)])
+def dashboard_strategy_context(category: str = Query(default="tennis", min_length=1)) -> dict:
+    return strategy_context(category=category)
+
+
 @app.get("/api/dashboard/strategy-decisions", dependencies=[Depends(require_dashboard_token)])
-def dashboard_strategy_decisions() -> dict:
+def dashboard_strategy_decisions(limit: int = Query(default=100, ge=1, le=300)) -> dict:
     return {
         "evaluation": latest_strategy_evaluation(),
-        "decisions": recent_strategy_decisions(),
+        "decisions": recent_strategy_decisions(limit=limit),
     }
+
+
+@app.post("/api/paper-session/run", dependencies=[Depends(require_dashboard_token)])
+def paper_session_run(request: PaperSessionRequest) -> dict:
+    return run_paper_session(category=request.category, max_results=request.max_results)
 
 
 @app.post("/api/live-review", dependencies=[Depends(require_dashboard_token)])

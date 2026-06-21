@@ -22,7 +22,7 @@ from src.trading.journal import JournalStore, journal_performance_summary
 from src.trading.market_history import latest_snapshot_path, load_market_snapshots, save_market_snapshots
 from src.trading.paper_broker import PaperBroker
 from src.trading.research import inherited_market_priors
-from src.trading.strategy import BackPriceBucketStrategy
+from src.trading.strategy import StrategyDecision, strategy_for_category
 
 load_dotenv()
 
@@ -226,7 +226,7 @@ def paper(category: str = "tennis", max_results: int = 50):
             selection.captured_at = captured_at
 
     snapshot_path = save_market_snapshots(snapshots, captured_at=captured_at)
-    strategy = BackPriceBucketStrategy()
+    strategy = strategy_for_category(category)
     broker = PaperBroker()
     journal = JournalStore()
 
@@ -259,10 +259,12 @@ def paper(category: str = "tennis", max_results: int = 50):
 
     print(f"snapshot_path: {snapshot_path}")
     print(f"snapshots_collected: {len(snapshots)}")
+    print(f"strategy_focus: {category}")
     print(f"strategy: {strategy.definition.name}@{strategy.definition.version}")
     print(f"strategy_decisions: {len(decisions)}")
     print(f"strategy_acceptances: {sum(1 for decision in decisions if decision.accepted)}")
     print(f"strategy_rejections: {sum(1 for decision in decisions if not decision.accepted)}")
+    _print_decision_summary(decisions)
     print(f"proposals_created: {proposals}")
     print(f"duplicate_proposals_skipped: {duplicates}")
     print(f"paper_fills_created: {paper_fills}")
@@ -294,11 +296,13 @@ def replay(snapshot_path: str | None = None, output_path: str | None = None):
         print(f"\nReplay failed: output journal already exists: {replay_output}\n")
         sys.exit(1)
 
-    strategy = BackPriceBucketStrategy()
+    strategy_focus = _infer_snapshot_focus_category(snapshots)
+    strategy = strategy_for_category(strategy_focus)
     broker = PaperBroker(journal_path=replay_output)
     journal = JournalStore(path=replay_output, recorded_at=replay_clock)
 
-    journal.record_snapshot_collection(source_path, len(snapshots), "replay")
+    replay_category = f"replay:{strategy_focus}" if strategy_focus else "replay"
+    journal.record_snapshot_collection(source_path, len(snapshots), replay_category)
     decisions = strategy.evaluate_decisions(snapshots, now=replay_clock)
     journal.record_strategy_evaluation(strategy.definition, decisions, snapshots_seen=len(snapshots))
 
@@ -328,10 +332,12 @@ def replay(snapshot_path: str | None = None, output_path: str | None = None):
     print(f"replay_clock: {replay_clock.isoformat()}")
     print(f"output_journal: {replay_output}")
     print(f"snapshots_replayed: {len(snapshots)}")
+    print(f"strategy_focus: {strategy_focus or '(mixed/all)'}")
     print(f"strategy: {strategy.definition.name}@{strategy.definition.version}")
     print(f"strategy_decisions: {len(decisions)}")
     print(f"strategy_acceptances: {sum(1 for decision in decisions if decision.accepted)}")
     print(f"strategy_rejections: {sum(1 for decision in decisions if not decision.accepted)}")
+    _print_decision_summary(decisions)
     print(f"proposals_created: {proposals}")
     print(f"duplicate_proposals_skipped: {duplicates}")
     print(f"paper_fills_created: {paper_fills}\n")
@@ -346,6 +352,54 @@ def _replay_clock(source_path: Path, snapshots) -> datetime:
     if clock.tzinfo is None:
         clock = clock.replace(tzinfo=timezone.utc)
     return clock
+
+
+def _infer_snapshot_focus_category(snapshots) -> str | None:
+    subcategories: set[str] = set()
+    categories: set[str] = set()
+    for snapshot in snapshots:
+        if snapshot.category:
+            categories.add(snapshot.category.strip().lower())
+        if snapshot.subcategory:
+            subcategories.add(snapshot.subcategory.strip().lower())
+        for selection in snapshot.selections:
+            if selection.category:
+                categories.add(selection.category.strip().lower())
+            if selection.subcategory:
+                subcategories.add(selection.subcategory.strip().lower())
+
+    if subcategories == {"tennis"}:
+        return "tennis"
+    if len(categories) == 1:
+        return next(iter(categories))
+    return None
+
+
+def _print_decision_summary(decisions: list[StrategyDecision]) -> None:
+    rejection_counts: dict[str, int] = {}
+    accepted_subcategories: dict[str, int] = {}
+    decision_subcategories: dict[str, int] = {}
+
+    for decision in decisions:
+        subcategory = decision.subcategory or "unknown"
+        decision_subcategories[subcategory] = decision_subcategories.get(subcategory, 0) + 1
+        if decision.accepted:
+            accepted_subcategories[subcategory] = accepted_subcategories.get(subcategory, 0) + 1
+            continue
+        rejection_counts[decision.reason_code] = rejection_counts.get(decision.reason_code, 0) + 1
+
+    print(f"decision_subcategories: {_format_counts(decision_subcategories)}")
+    print(f"accepted_subcategories: {_format_counts(accepted_subcategories)}")
+    print(f"top_rejections: {_format_counts(rejection_counts)}")
+    if decisions and not any(decision.accepted for decision in decisions):
+        print("no_fill_summary: no accepted strategy decisions; paper broker was not invoked")
+
+
+def _format_counts(counts: dict[str, int], limit: int = 5) -> str:
+    if not counts:
+        return "(none)"
+    items = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    return ", ".join(f"{key}={value}" for key, value in items)
 
 
 def research_priors():

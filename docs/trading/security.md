@@ -118,6 +118,17 @@ Selective extraction performed on `2026-04-19`:
 - never commit secrets
 - never print raw tokens, passwords, or session identifiers
 - scrub recorded fixtures before they are committed
+- Betfair non-interactive login requires a public certificate plus matching private key; keep the `.key` file local
+  and upload only the `.crt` file to Betfair
+- project-local Betfair certs live under `runtime/betfair/certs/`, which is ignored runtime state
+- generate a local Betfair cert/key pair with:
+
+```bash
+scripts/create-betfair-cert.sh --write-env
+```
+
+- after uploading the generated `.crt` to Betfair, confirm access with `uv run main.py doctor` before any paper
+  session; if doctor is not `OK`, `paper` must not fetch markets or create fills
 
 ## Paper-Only Rule
 

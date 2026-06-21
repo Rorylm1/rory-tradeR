@@ -82,7 +82,7 @@ Trading-foundation commands added in this repo:
 uv run main.py doctor
 uv run main.py data-verify /path/to/data.tar.zst
 uv run main.py markets
-uv run main.py paper tennis 50
+uv run main.py paper tennis 100
 uv run main.py research-priors
 uv run main.py journal-report
 uv run main.py resolve-paper <proposal_id> <won|lost|void>
@@ -94,7 +94,8 @@ uv run main.py dashboard-api 127.0.0.1 8000
 Notes:
 - `doctor` checks exchange config and approval readiness
 - `data-verify` validates archive checksum and extraction shape
-- `paper` collects Betfair snapshots, emits strategy proposals, and simulates paper fills
+- `paper` collects Betfair snapshots, emits tennis-first strategy proposals, and simulates paper fills
+- tennis paper discovery pulls `MATCH_ODDS,SET_WINNER` markets from 30 minutes to 72 hours out by default
 - `research-priors` summarizes inherited Kalshi price-bucket priors
 - `journal-report` summarizes open positions, closed results, and PnL by strategy, price bucket, and time-to-event
 - `resolve-paper` manually settles a paper position by `proposal_id` and appends the outcome to the journal
@@ -135,6 +136,19 @@ sudo systemctl disable --now rory-trader-paper-session.timer
 
 The service fetches current market data, creates paper-only fills, and writes the append-only journal for the dashboard. It never enables live Betfair order submission.
 
+The dashboard/API can also trigger one bounded paper-only session on the backend host:
+
+```bash
+curl -sS -X POST \
+  -H "X-Rory-Dashboard-Token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"category":"tennis","max_results":100}' \
+  https://api.your-domain.example/api/paper-session/run
+```
+
+Use this path when local Betfair access is blocked by `BETTING_RESTRICTED_LOCATION` but the approved VPS can reach
+Betfair.
+
 ## Data Safety
 
 Do not run `make setup` blindly.
@@ -151,6 +165,20 @@ The upstream historical dataset is downloaded from an external bucket and must b
 Betfair:
 - primary execution and learning target
 - requires valid account credentials and app access
+- local/API automation should use non-interactive certificate login:
+
+```bash
+scripts/create-betfair-cert.sh --write-env
+```
+
+Upload the generated `.crt` file to Betfair, keep the `.key` file private, then run:
+
+```bash
+uv run main.py doctor
+uv run main.py paper tennis 100
+```
+
+The generated cert/key paths are project-local under `runtime/betfair/certs/`, which is ignored runtime state.
 
 Smarkets:
 - deferred optional expansion path

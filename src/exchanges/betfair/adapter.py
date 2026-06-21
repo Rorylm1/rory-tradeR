@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+import ssl
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -50,6 +51,31 @@ class BetfairAdapter(ExchangeAdapter):
         raw = os.getenv("RORY_TRADER_BETFAIR_TENNIS_MARKET_TYPES", "MATCH_ODDS,SET_WINNER")
         return [item.strip().upper() for item in raw.split(",") if item.strip()]
 
+    def _market_start_time_filter(self, category: str | None, captured_at: datetime) -> dict[str, str]:
+        category_lower = (category or "").strip().lower()
+        if category_lower != "tennis":
+            return {"from": self._betfair_time(captured_at)}
+
+        default_min_minutes = _env_float("RORY_TRADER_TENNIS_MIN_HOURS_TO_EVENT", 0.5) * 60
+        min_minutes = _env_float("RORY_TRADER_BETFAIR_TENNIS_MIN_START_MINUTES", default_min_minutes)
+        max_hours = _env_float(
+            "RORY_TRADER_BETFAIR_TENNIS_MAX_START_HOURS",
+            _env_float("RORY_TRADER_TENNIS_MAX_HOURS_TO_EVENT", 72.0),
+        )
+        if min_minutes < 0:
+            raise ValueError("RORY_TRADER_BETFAIR_TENNIS_MIN_START_MINUTES must be non-negative.")
+        if max_hours * 60 <= min_minutes:
+            raise ValueError("RORY_TRADER_BETFAIR_TENNIS_MAX_START_HOURS must be greater than the minimum start time.")
+
+        return {
+            "from": self._betfair_time(captured_at + timedelta(minutes=min_minutes)),
+            "to": self._betfair_time(captured_at + timedelta(hours=max_hours)),
+        }
+
+    @staticmethod
+    def _betfair_time(value: datetime) -> str:
+        return value.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
     def _missing_fields(self) -> list[str]:
         missing = []
         required = [
@@ -70,7 +96,9 @@ class BetfairAdapter(ExchangeAdapter):
     @retry_request()
     def _cert_login(self) -> dict:
         """Login using SSL client certificate (for automated/production use)."""
-        with httpx.Client(timeout=20.0, cert=(self.cert_file, self.key_file)) as client:
+        ssl_context = ssl.create_default_context()
+        ssl_context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
+        with httpx.Client(timeout=20.0, verify=ssl_context) as client:
             response = client.post(
                 self.cert_identity_url,
                 headers={"X-Application": self.app_key},
@@ -168,21 +196,28 @@ class BetfairAdapter(ExchangeAdapter):
                     details={"cert_file": self.cert_file, "key_file": self.key_file},
                 )
 
+        login_mode = "cert" if self.use_cert_login else "interactive"
         try:
             payload = self._login()
+        except httpx.HTTPStatusError as exc:
+            return ValidationResult(
+                exchange=self.name,
+                ok=False,
+                approval_status="login_failed",
+                message=f"Betfair login failed: HTTP {exc.response.status_code} (mode: {login_mode})",
+            )
         except Exception as exc:  # noqa: BLE001
             return ValidationResult(
                 exchange=self.name,
                 ok=False,
                 approval_status="login_failed",
-                message=f"Betfair login failed: {exc.__class__.__name__}",
+                message=f"Betfair login failed: {exc.__class__.__name__} (mode: {login_mode})",
             )
 
         login_status = payload.get("loginStatus", payload.get("status", "UNKNOWN"))
         ok = login_status == "SUCCESS"
         if ok:
             self._session_token = payload.get("sessionToken", payload.get("token"))
-        login_mode = "cert" if self.use_cert_login else "interactive"
         return ValidationResult(
             exchange=self.name,
             ok=ok,
@@ -194,11 +229,7 @@ class BetfairAdapter(ExchangeAdapter):
         self._ensure_session_token()
         captured_at = datetime.now(timezone.utc)
 
-        market_filter: dict[str, object] = {
-            "marketStartTime": {
-                "from": captured_at.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-            }
-        }
+        market_filter: dict[str, object] = {"marketStartTime": self._market_start_time_filter(category, captured_at)}
         event_type_ids = self._event_type_ids_for_category(category)
         if event_type_ids:
             market_filter["eventTypeIds"] = event_type_ids
@@ -357,3 +388,13 @@ class BetfairAdapter(ExchangeAdapter):
             is_market_data_delayed=raw_book.get("isMarketDataDelayed"),
             raw_payload={"catalogue": raw_market, "book": raw_book},
         )
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be numeric.") from exc

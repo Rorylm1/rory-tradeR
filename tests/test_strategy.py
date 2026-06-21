@@ -3,13 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from src.exchanges.common.models import MarketSnapshot, SelectionSnapshot
-from src.trading.strategy import BackPriceBucketConfig, BackPriceBucketStrategy
+from src.trading.strategy import BackPriceBucketConfig, BackPriceBucketStrategy, strategy_for_category
 
 
 def _snapshot(
     *,
     hours_to_event: float = 12,
     category: str = "sports",
+    subcategory: str = "soccer",
     spread: float = 0.05,
     back: float = 2.4,
     captured_at: datetime | None = None,
@@ -25,7 +26,7 @@ def _snapshot(
         market_title="Example Market",
         selection_name="Selection",
         category=category,
-        subcategory="soccer",
+        subcategory=subcategory,
         event_start=now + timedelta(hours=hours_to_event),
         best_back=back,
         best_lay=back + spread,
@@ -41,7 +42,7 @@ def _snapshot(
         market_id="1.100",
         market_title="Match Odds",
         category=category,
-        subcategory="soccer",
+        subcategory=subcategory,
         event_start=selection.event_start,
         status="open",
         selections=[selection],
@@ -136,3 +137,43 @@ def test_back_price_bucket_strategy_rejects_small_available_back_size():
 
     assert decisions[0].accepted is False
     assert decisions[0].reason_code == "best_back_size_too_low"
+
+
+def test_strategy_for_category_uses_tennis_specific_strategy():
+    strategy = strategy_for_category("tennis")
+
+    signals = strategy.evaluate([_snapshot(subcategory="tennis")])
+
+    assert len(signals) == 1
+    assert signals[0].strategy_name == "betfair_tennis_pre_match_back_bucket"
+    assert "tennis" in signals[0].tags
+
+
+def test_tennis_strategy_rejects_non_tennis_sports():
+    strategy = strategy_for_category("tennis")
+
+    decisions = strategy.evaluate_decisions([_snapshot(subcategory="soccer")])
+
+    assert decisions[0].accepted is False
+    assert decisions[0].reason_code == "subcategory_not_allowed"
+
+
+def test_tennis_strategy_allows_nearer_scouting_window_by_default():
+    strategy = strategy_for_category("tennis")
+
+    accepted = strategy.evaluate_decisions([_snapshot(subcategory="tennis", hours_to_event=0.75)])
+    rejected = strategy.evaluate_decisions([_snapshot(subcategory="tennis", hours_to_event=0.25)])
+
+    assert accepted[0].accepted is True
+    assert rejected[0].accepted is False
+    assert rejected[0].reason_code == "event_start_too_soon"
+
+
+def test_tennis_strategy_window_is_configurable(monkeypatch):
+    monkeypatch.setenv("RORY_TRADER_TENNIS_MIN_HOURS_TO_EVENT", "2")
+    strategy = strategy_for_category("tennis")
+
+    decisions = strategy.evaluate_decisions([_snapshot(subcategory="tennis", hours_to_event=1)])
+
+    assert decisions[0].accepted is False
+    assert decisions[0].reason_code == "event_start_too_soon"

@@ -3,7 +3,7 @@
 import { RefreshCw, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import type { LiveOdds } from "../lib/backend";
-import { MarketExplorer } from "./market-explorer";
+import { MarketTable } from "./market-table";
 
 const LIVE_ODDS_CATEGORY = "tennis";
 const LIVE_ODDS_MAX_RESULTS = 50;
@@ -88,7 +88,7 @@ export function LiveOddsPanel() {
       {error ? <div className="empty-state">{error}</div> : null}
       {liveOdds?.error ? <div className="empty-state">{liveOdds.error}</div> : null}
       {liveOdds && liveOdds.markets.length > 0 ? (
-        <MarketExplorer markets={liveOdds.markets} scopeLabel={`${liveOdds.category} / ${liveOdds.max_results}`} />
+        <MarketTable markets={liveOdds.markets} limit={50} />
       ) : !error && !liveOdds?.error ? (
         <div className="empty-state">Click refresh to fetch current read-only Betfair tennis odds.</div>
       ) : null}

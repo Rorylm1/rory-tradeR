@@ -85,8 +85,8 @@ BETFAIR_USERNAME=
 BETFAIR_PASSWORD=
 BETFAIR_APP_KEY=
 BETFAIR_USE_CERT_LOGIN=true
-BETFAIR_CERT_FILE=/opt/rory-trader/certs/client.crt
-BETFAIR_KEY_FILE=/opt/rory-trader/certs/client.key
+BETFAIR_CERT_FILE=/opt/rory-trader/runtime/betfair/certs/client.crt
+BETFAIR_KEY_FILE=/opt/rory-trader/runtime/betfair/certs/client.key
 RORY_TRADER_LIVE_ENABLED=false
 RORY_TRADER_DASHBOARD_TOKEN=<long-random-token>
 RORY_TRADER_DASHBOARD_ALLOWED_ORIGINS=https://<your-vercel-app>.vercel.app
@@ -99,6 +99,11 @@ RORY_TRADER_MAX_DAILY_LOSS=20
 RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS=1800
 RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE=2
 RORY_TRADER_PAPER_SESSION_TIMEOUT_SECONDS=300
+RORY_TRADER_BETFAIR_TENNIS_MARKET_TYPES=MATCH_ODDS,SET_WINNER
+RORY_TRADER_BETFAIR_TENNIS_MIN_START_MINUTES=30
+RORY_TRADER_BETFAIR_TENNIS_MAX_START_HOURS=72
+BETFAIR_MARKETS_CATEGORY=tennis
+BETFAIR_MARKETS_MAX_RESULTS=100
 ```
 
 Start locally on the VPS:
@@ -152,7 +157,7 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/opt/rory-trader
 EnvironmentFile=/opt/rory-trader/.env
-ExecStart=/opt/rory-trader/scripts/run-paper-session.sh sports 25
+ExecStart=/opt/rory-trader/scripts/run-paper-session.sh tennis 100
 User=rory-trader
 Group=rory-trader
 TimeoutStartSec=300
@@ -232,12 +237,13 @@ Do not add Betfair credentials to Vercel.
 
 To temporarily make the dashboard public while staying read-only, leave `DASHBOARD_BASIC_AUTH_ENABLED` unset or set
 it to `false`. In that mode the browser Basic Auth prompt is skipped and Vercel rejects proxied non-GET dashboard
-requests. To restore the prompt, set `DASHBOARD_BASIC_AUTH_ENABLED=true` with both username and password configured.
+requests. The public proof view also hides operator-only paper-session controls. To restore the prompt, set
+`DASHBOARD_BASIC_AUTH_ENABLED=true` with both username and password configured.
 
 ## Betfair Credentials And Certs
 
-Keep Betfair secrets and certificate files on the VPS only. Upload the `.crt` and `.key` files to a temporary
-location first, then run the credential setup script:
+Keep Betfair secrets and project-local runtime certificate files on the VPS only. Upload the `.crt` and `.key` files
+to a temporary location first, then run the credential setup script:
 
 ```bash
 scp client.crt client.key root@46.62.217.82:/tmp/
@@ -252,18 +258,18 @@ rm -f /tmp/client.crt /tmp/client.key
 ```
 
 The script prompts for the Betfair username, password, and app key without writing them to shell history,
-copies certs into `/opt/rory-trader/certs/`, stores paths in `/opt/rory-trader/.env`, forces
+copies certs into `/opt/rory-trader/runtime/betfair/certs/`, stores paths in `/opt/rory-trader/.env`, forces
 `RORY_TRADER_LIVE_ENABLED=false`, and runs `doctor`.
 
 Expected file permissions:
 
 ```bash
-sudo ls -l /opt/rory-trader/.env /opt/rory-trader/certs/
+sudo ls -l /opt/rory-trader/.env /opt/rory-trader/runtime/betfair/certs/
 ```
 
 - `/opt/rory-trader/.env`: `0640`, owned by `root:rory-trader`
-- `/opt/rory-trader/certs/client.crt`: `0640`, owned by `root:rory-trader`
-- `/opt/rory-trader/certs/client.key`: `0640`, owned by `root:rory-trader`
+- `/opt/rory-trader/runtime/betfair/certs/client.crt`: `0640`, owned by `root:rory-trader`
+- `/opt/rory-trader/runtime/betfair/certs/client.key`: `0640`, owned by `root:rory-trader`
 
 ## Live Paper Data
 
@@ -278,7 +284,21 @@ sudo journalctl -u rory-trader-paper-session -n 80 --no-pager
 
 The command fetches current Betfair markets, saves snapshots, creates strategy proposals, simulates paper fills,
 enforces stale/auth/exposure/loss controls, and appends to `/opt/rory-trader/runtime/journals/trading_journal.jsonl`.
-The dashboard should then show fresh snapshot status, journal activity, and any open paper positions.
+The dashboard should then show fresh snapshot status, journal activity, any open paper positions, and the learning
+review tables grouped by strategy, price bucket, and time-to-event.
+
+The dashboard API also exposes a token-protected operator trigger:
+
+```bash
+curl -sS -X POST \
+  -H "X-Rory-Dashboard-Token: <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"category":"tennis","max_results":100}' \
+  https://api.your-domain.example/api/paper-session/run
+```
+
+This calls the same bounded paper-only script, refuses live-enabled environments, and returns parsed counts such as
+`paper_fills_created`.
 
 ## Safety Checks
 

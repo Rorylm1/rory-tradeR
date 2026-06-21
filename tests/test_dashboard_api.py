@@ -155,6 +155,25 @@ def test_strategy_decisions_endpoint_reads_latest_evaluation(monkeypatch, tmp_pa
     assert payload["decisions"][0]["reason_code"] == "spread_too_wide"
 
 
+def test_strategy_context_endpoint_explains_tennis_rules(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    JournalStore().record_snapshot_collection(tmp_path / "snapshots.parquet", 25, "tennis")
+
+    response = client.get(
+        "/api/dashboard/strategy-context",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["category"] == "tennis"
+    assert payload["definition"]["name"] == "betfair_tennis_pre_match_back_bucket"
+    assert payload["definition"]["allowed_subcategories"] == ["tennis"]
+    assert payload["definition"]["fixed_stake"] == 2.0
+    assert any(rule["label"] == "Price bucket" for rule in payload["rules"])
+    assert payload["recent_snapshot_collections"][0]["snapshot_count"] == 25
+
+
 def test_latest_markets_endpoint_reads_latest_snapshot(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     save_market_snapshots([_snapshot()], output_dir=tmp_path / "data" / "betfair" / "snapshots")
@@ -213,6 +232,68 @@ def test_live_odds_endpoint_fetches_betfair_without_saving_snapshot(monkeypatch,
     assert payload["live_execution_available"] is False
 
 
+def test_paper_session_endpoint_runs_bounded_paper_script(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    calls = []
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = "\n".join(
+            [
+                "Paper report:",
+                "snapshot_path: /tmp/snapshots.parquet",
+                "snapshots_collected: 12",
+                "strategy_focus: tennis",
+                "strategy: betfair_tennis_pre_match_back_bucket@v1",
+                "strategy_acceptances: 2",
+                "paper_fills_created: 2",
+                "journal_path: /tmp/journal.jsonl",
+            ]
+        )
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return FakeCompletedProcess()
+
+    monkeypatch.setattr("src.dashboard.service.subprocess.run", fake_run)
+
+    response = client.post(
+        "/api/paper-session/run",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+        json={"category": "tennis", "max_results": 100},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "completed"
+    assert payload["category"] == "tennis"
+    assert payload["max_results"] == 100
+    assert payload["summary"]["paper_fills_created"] == 2
+    assert payload["summary"]["strategy_focus"] == "tennis"
+    assert payload["live_execution_available"] is False
+    assert calls
+    assert calls[0][0][-2:] == ["tennis", "100"]
+    assert calls[0][1]["env"]["RORY_TRADER_LIVE_ENABLED"] == "false"
+
+
+def test_paper_session_endpoint_rejects_when_live_enabled(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    monkeypatch.setenv("RORY_TRADER_LIVE_ENABLED", "true")
+
+    response = client.post(
+        "/api/paper-session/run",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+        json={"category": "tennis", "max_results": 100},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "rejected"
+    assert payload["live_execution_available"] is False
+    assert "paper sessions require live execution disabled" in payload["stderr"]
+
+
 def test_pnl_series_endpoint_reads_journal_realized_pnl(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     proposal_id = _seed_open_position()
@@ -227,6 +308,25 @@ def test_pnl_series_endpoint_reads_journal_realized_pnl(monkeypatch, tmp_path):
     points = response.json()["points"]
     assert len(points) == 2
     assert points[-1]["cumulative_realized_pnl"] > 0
+
+
+def test_performance_endpoint_returns_learning_breakdowns(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    proposal_id = _seed_open_position()
+    resolve_journal_position(proposal_id, "won")
+
+    response = client.get(
+        "/api/dashboard/performance",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["strategy"][0]["executed_positions"] == 1
+    assert payload["strategy"][0]["closed_positions"] == 1
+    assert payload["strategy"][0]["win_rate"] == 1
+    assert payload["price_bucket"][0]["price_bucket"] == "2.0-3.0"
+    assert payload["time_window"][0]["time_window"] == "12-24h"
 
 
 def test_open_positions_include_latest_live_review(monkeypatch, tmp_path):

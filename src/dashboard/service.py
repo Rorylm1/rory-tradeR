@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import math
 import os
+import re
+import subprocess
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from src.common.paths import runtime_path
+from src.common.paths import REPO_ROOT, runtime_path
 from src.exchanges import BetfairAdapter
 from src.exchanges.common.models import MarketSnapshot
 from src.trading.journal import JournalStore, journal_dataframe, journal_performance_summary
 from src.trading.market_history import flatten_market_snapshots, latest_snapshot_path
+from src.trading.strategy import strategy_for_category
 
 from .store import DashboardStore
 
@@ -23,6 +27,8 @@ MIN_MARKET_TOTAL_MATCHED_ENV_VAR = "RORY_TRADER_DASHBOARD_MIN_MARKET_TOTAL_MATCH
 DEFAULT_STALE_AFTER_SECONDS = 30 * 60
 DEFAULT_MIN_AVAILABLE_SIZE = 2.0
 DEFAULT_MIN_MARKET_TOTAL_MATCHED = 100.0
+PAPER_SESSION_TIMEOUT_ENV_VAR = "RORY_TRADER_PAPER_SESSION_TIMEOUT_SECONDS"
+DEFAULT_PAPER_SESSION_TIMEOUT_SECONDS = 300
 
 
 def _json_safe(value: Any) -> Any:
@@ -50,6 +56,23 @@ def _records(df: pd.DataFrame, limit: int | None = None) -> list[dict[str, Any]]
     for record in df.to_dict(orient="records"):
         rows.append({key: _json_safe(value) for key, value in record.items()})
     return rows
+
+
+def _non_empty_performance_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    if df.empty or "executed_positions" not in df.columns:
+        return []
+    executed = pd.to_numeric(df["executed_positions"], errors="coerce").fillna(0)
+    return _records(df[executed > 0])
+
+
+def _plain_json(value: Any) -> Any:
+    if isinstance(value, tuple):
+        return [_plain_json(item) for item in value]
+    if isinstance(value, list):
+        return [_plain_json(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _plain_json(item) for key, item in value.items()}
+    return value
 
 
 def _overview_row(summary: dict[str, pd.DataFrame]) -> dict[str, Any]:
@@ -255,6 +278,84 @@ def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
     }
 
 
+def performance_breakdown(store: DashboardStore | None = None) -> dict[str, Any]:
+    store = store or DashboardStore()
+    store.sync_journal()
+    summary = journal_performance_summary(path=store.journal_path)
+    return {
+        "strategy": _non_empty_performance_records(summary["strategy"]),
+        "price_bucket": _non_empty_performance_records(summary["price_bucket"]),
+        "time_window": _non_empty_performance_records(summary["time_window"]),
+    }
+
+
+def recent_snapshot_collections(store: DashboardStore | None = None, limit: int = 8) -> list[dict[str, Any]]:
+    store = store or DashboardStore()
+    events = JournalStore(path=store.journal_path).load_events()
+    snapshots: list[dict[str, Any]] = []
+    for row in reversed(events):
+        if row.get("event_type") != "snapshot_collection":
+            continue
+        payload = dict(row.get("payload", {}))
+        payload["recorded_at"] = row.get("recorded_at")
+        snapshots.append(payload)
+        if len(snapshots) >= limit:
+            break
+    return snapshots
+
+
+def strategy_context(category: str = "tennis", store: DashboardStore | None = None) -> dict[str, Any]:
+    strategy = strategy_for_category(category)
+    definition = _plain_json(asdict(strategy.definition))
+    return {
+        "category": category,
+        "definition": definition,
+        "rules": [
+            {
+                "label": "Universe",
+                "value": ", ".join(definition["allowed_subcategories"] or definition["allowed_categories"]),
+                "detail": "Only matching markets can create proposals.",
+            },
+            {
+                "label": "Price bucket",
+                "value": f"{definition['min_back_price']:.2f} to {definition['max_back_price']:.2f}",
+                "detail": "Best available back price must sit inside this range.",
+            },
+            {
+                "label": "Spread cap",
+                "value": f"{definition['max_spread']:.2f}",
+                "detail": "Best lay minus best back must be no wider than this.",
+            },
+            {
+                "label": "Event window",
+                "value": f"{definition['min_hours_to_event']:.1f}h to {definition['max_hours_to_event']:.0f}h",
+                "detail": "Avoids in-play/immediate starts and very distant events.",
+            },
+            {
+                "label": "Market liquidity",
+                "value": f"matched >= {definition['min_market_total_matched']:.0f}",
+                "detail": "Rejects thin markets before looking at runners.",
+            },
+            {
+                "label": "Best back size",
+                "value": f">= {definition['min_best_back_size']:.0f}",
+                "detail": "Rejects runners without enough visible back size.",
+            },
+            {
+                "label": "Stake",
+                "value": f"£{definition['fixed_stake']:.2f}",
+                "detail": "Paper fill stake per accepted runner.",
+            },
+            {
+                "label": "Promotion gate",
+                "value": f"{definition['acceptance_min_trades']} closed / {definition['acceptance_min_roi']:.0%} ROI",
+                "detail": "Evidence threshold before considering any manual-assisted live step.",
+            },
+        ],
+        "recent_snapshot_collections": recent_snapshot_collections(store=store),
+    }
+
+
 def dashboard_health(store: DashboardStore | None = None, validate_betfair: bool = True) -> dict[str, Any]:
     store = store or DashboardStore()
     store.sync_journal()
@@ -435,6 +536,98 @@ def live_odds(category: str = "tennis", max_results: int = 50, limit: int = 300)
         "error": None,
         "live_execution_available": False,
     }
+
+
+def run_paper_session(category: str = "tennis", max_results: int = 100) -> dict[str, Any]:
+    started_at = datetime.now(timezone.utc)
+    if os.getenv(LIVE_ENABLED_ENV_VAR, "false").lower() in {"true", "1", "yes"}:
+        return {
+            "status": "rejected",
+            "started_at": started_at.isoformat(),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "category": category,
+            "max_results": max_results,
+            "returncode": None,
+            "stdout": "",
+            "stderr": "RORY_TRADER_LIVE_ENABLED is true; paper sessions require live execution disabled.",
+            "summary": {},
+            "live_execution_available": False,
+        }
+
+    script_path = REPO_ROOT / "scripts" / "run-paper-session.sh"
+    timeout_seconds = int(os.getenv(PAPER_SESSION_TIMEOUT_ENV_VAR, str(DEFAULT_PAPER_SESSION_TIMEOUT_SECONDS)))
+    env = os.environ.copy()
+    env["RORY_TRADER_LIVE_ENABLED"] = "false"
+
+    try:
+        result = subprocess.run(
+            [str(script_path), category, str(max_results)],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        stdout = result.stdout
+        stderr = result.stderr
+        returncode = result.returncode
+        status = "completed" if returncode == 0 else "failed"
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        returncode = None
+        status = "timeout"
+
+    if isinstance(stdout, bytes):
+        stdout = stdout.decode("utf-8", errors="replace")
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", errors="replace")
+
+    finished_at = datetime.now(timezone.utc)
+    return {
+        "status": status,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "category": category,
+        "max_results": max_results,
+        "returncode": returncode,
+        "stdout": _truncate_text(stdout),
+        "stderr": _truncate_text(stderr),
+        "summary": _paper_session_summary(stdout),
+        "live_execution_available": False,
+    }
+
+
+def _paper_session_summary(stdout: str) -> dict[str, Any]:
+    keys = [
+        "snapshot_path",
+        "snapshots_collected",
+        "strategy",
+        "strategy_focus",
+        "strategy_decisions",
+        "strategy_acceptances",
+        "strategy_rejections",
+        "top_rejections",
+        "proposals_created",
+        "duplicate_proposals_skipped",
+        "paper_fills_created",
+        "journal_path",
+    ]
+    summary: dict[str, Any] = {}
+    for key in keys:
+        match = re.search(rf"^{re.escape(key)}:\s*(.+)$", stdout, flags=re.MULTILINE)
+        if not match:
+            continue
+        raw = match.group(1).strip()
+        summary[key] = int(raw) if raw.isdigit() else raw
+    return summary
+
+
+def _truncate_text(value: str, limit: int = 8000) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "\n...[truncated]"
 
 
 def pnl_series(store: DashboardStore | None = None) -> dict[str, Any]:

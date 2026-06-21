@@ -48,6 +48,34 @@ Each tradable outcome should map to:
 - auth-failure kill switch: `paper` exits before fetching markets if Betfair validation fails
 - recurring service bound: paper sessions should finish within `300` seconds on the VPS
 
+Tennis scouting defaults:
+- strategy: `betfair_tennis_pre_match_back_bucket`
+- minimum time to event: `0.5` hours (`RORY_TRADER_TENNIS_MIN_HOURS_TO_EVENT=0.5`)
+- maximum time to event: `72` hours (`RORY_TRADER_TENNIS_MAX_HOURS_TO_EVENT=72`)
+- maximum spread: `0.2` decimal odds (`RORY_TRADER_TENNIS_MAX_SPREAD=0.2`)
+- minimum market matched: `50` (`RORY_TRADER_TENNIS_MIN_MARKET_TOTAL_MATCHED=50`)
+- Betfair market types: `MATCH_ODDS,SET_WINNER`
+- Betfair discovery window: starts at `30` minutes out and ends at `72` hours out
+  (`RORY_TRADER_BETFAIR_TENNIS_MIN_START_MINUTES=30`,
+  `RORY_TRADER_BETFAIR_TENNIS_MAX_START_HOURS=72`)
+
+The tennis defaults are intentionally more permissive than the generic sports strategy so the system can create
+small, reviewable paper fills from real tennis books once Betfair authentication is healthy. They still reject
+in-play or immediate-start situations through the minimum time-to-event guardrail and stale-snapshot checks.
+
+If a local workstation returns `BETTING_RESTRICTED_LOCATION`, run paper sessions from the approved VPS path instead
+of relaxing strategy rules or adding geo-bypass logic. The dashboard API exposes a token-protected
+`POST /api/paper-session/run` endpoint that calls the bounded paper-only script on the backend host and returns the
+resulting proposal/fill counts.
+
+The dashboard API also exposes read-only performance breakdowns so the proof view can show what the strategy is
+learning without granting write access:
+
+```bash
+curl -H "X-Rory-Dashboard-Token: <token>" \
+  https://api.your-domain.example/api/dashboard/performance
+```
+
 ## Replay Rules
 
 - replay input should come from saved snapshots
@@ -70,4 +98,5 @@ the evaluation clock so old snapshots can be replayed deterministically.
 - use inherited Kalshi/Polymarket history to study price-bucket calibration and market behavior
 - use Betfair as the venue where we collect proposals, paper fills, and post-trade review data
 - review journal output by strategy version, price bucket, and time-to-event
+- expose those grouped metrics in the dashboard learning review, while treating open-position marks as provisional
 - only promote a strategy to tiny manual-assisted live trading after paper evidence survives costs

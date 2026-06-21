@@ -96,7 +96,7 @@ textarea {
 }
 
 .health-strip {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 12px;
 }
 
@@ -355,6 +355,20 @@ tbody tr:hover {
 .control-count {
   color: var(--muted);
   font-size: 13px;
+  white-space: nowrap;
+}
+
+.scope-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  border: 1px solid rgba(40, 104, 168, 0.28);
+  border-radius: 6px;
+  background: rgba(40, 104, 168, 0.08);
+  color: var(--blue);
+  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 700;
   white-space: nowrap;
 }
 

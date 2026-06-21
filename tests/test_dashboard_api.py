@@ -190,13 +190,13 @@ def test_live_odds_endpoint_fetches_betfair_without_saving_snapshot(monkeypatch,
 
         def list_markets(self, category: str | None = None, max_results: int = 10):
             assert category == "tennis"
-            assert max_results == 25
+            assert max_results == 50
             return [snapshot]
 
     monkeypatch.setattr("src.dashboard.service.BetfairAdapter", FakeBetfairAdapter)
 
     response = client.get(
-        "/api/dashboard/live-odds?category=tennis&max_results=25",
+        "/api/dashboard/live-odds",
         headers={"X-Rory-Dashboard-Token": "test-token"},
     )
 
@@ -204,6 +204,8 @@ def test_live_odds_endpoint_fetches_betfair_without_saving_snapshot(monkeypatch,
     payload = response.json()
     assert payload["mode"] == "live"
     assert payload["read_only"] is True
+    assert payload["category"] == "tennis"
+    assert payload["max_results"] == 50
     assert payload["market_count"] == 1
     assert payload["selection_count"] == 1
     assert payload["data_quality"]["tradeable_selection_count"] == 1

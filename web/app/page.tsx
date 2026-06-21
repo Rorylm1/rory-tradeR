@@ -327,9 +327,10 @@ export default async function DashboardPage() {
       <header className="topbar">
         <div>
           <h1>Rory TradeR</h1>
-          <p>Betfair paper-trading monitor</p>
+          <p>Tennis 50 Betfair paper monitor</p>
         </div>
         <div className="status-row">
+          <StatusPill ok label="Tennis 50" />
           <StatusPill ok={betfairReady} label={betfairReady ? "Betfair ready" : health.betfair.approval_status} />
           <StatusPill ok={dataFresh} label={dataFresh ? "Data fresh" : "Data stale"} />
           <StatusPill ok={oddsUsable} label={oddsUsable ? "Odds usable" : "Odds guarded"} />

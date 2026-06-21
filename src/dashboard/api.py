@@ -110,7 +110,7 @@ def dashboard_latest_markets() -> dict:
 @app.get("/api/dashboard/live-odds", dependencies=[Depends(require_dashboard_token)])
 def dashboard_live_odds(
     category: str = Query(default="tennis", min_length=1),
-    max_results: int = Query(default=25, ge=1, le=100),
+    max_results: int = Query(default=50, ge=1, le=100),
 ) -> dict:
     return live_odds(category=category, max_results=max_results)
 

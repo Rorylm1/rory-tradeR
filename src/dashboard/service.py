@@ -366,7 +366,7 @@ def latest_markets(limit: int = 120) -> dict[str, Any]:
     }
 
 
-def live_odds(category: str = "tennis", max_results: int = 25, limit: int = 160) -> dict[str, Any]:
+def live_odds(category: str = "tennis", max_results: int = 50, limit: int = 300) -> dict[str, Any]:
     adapter = BetfairAdapter()
     validation = adapter.validate_credentials()
     validation_payload = {

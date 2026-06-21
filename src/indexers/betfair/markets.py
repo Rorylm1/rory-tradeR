@@ -16,8 +16,8 @@ class BetfairMarketsIndexer(Indexer):
         )
 
     def run(self) -> None:
-        category = os.getenv("BETFAIR_MARKETS_CATEGORY", "sports")
-        max_results = int(os.getenv("BETFAIR_MARKETS_MAX_RESULTS", "25"))
+        category = os.getenv("BETFAIR_MARKETS_CATEGORY", "tennis")
+        max_results = int(os.getenv("BETFAIR_MARKETS_MAX_RESULTS", "50"))
 
         adapter = BetfairAdapter()
         validation = adapter.validate_credentials()

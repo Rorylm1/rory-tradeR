@@ -203,7 +203,7 @@ def markets(category: str | None = None, max_results: int = 5):
         print("")
 
 
-def paper(category: str = "sports", max_results: int = 25):
+def paper(category: str = "tennis", max_results: int = 50):
     """Collect snapshots, emit strategy proposals, and simulate paper fills."""
     adapter = BetfairAdapter()
     validation = adapter.validate_credentials()
@@ -471,6 +471,45 @@ def journal_report():
             )
     print("")
 
+    print("Learning notes:")
+    events = summary["events"]
+    if events.empty or "event_type" not in events.columns:
+        print("  (none)")
+    else:
+        learnings = events[events["event_type"] == "learning"].sort_values("recorded_at", ascending=False).head(5)
+        if learnings.empty:
+            print("  (none)")
+        else:
+            for _, row in learnings.iterrows():
+                proposal_id = _display_cell(row.get("proposal_id"), default="general")
+                note = _display_cell(row.get("note"), default="")
+                print(f"  {proposal_id}: {note}")
+    print("")
+
+
+def _display_cell(value, default: str = "n/a") -> str:
+    if value is None or value != value:
+        return default
+    return str(value)
+
+
+def record_learning(proposal_id: str | None = None, note: str = ""):
+    """Append a paper-trading learning note to the journal."""
+    if not proposal_id or not note:
+        print("Usage: uv run main.py record-learning <proposal_id|general> <note>")
+        sys.exit(1)
+
+    normalized_proposal_id = None if proposal_id in {"general", "-", "none"} else proposal_id
+    try:
+        JournalStore().record_learning(note, proposal_id=normalized_proposal_id, tags=["operator_learning"])
+    except ValueError as exc:
+        print(f"\nLearning note failed: {exc}\n")
+        sys.exit(1)
+
+    print("\nLearning note recorded:\n")
+    print(f"proposal_id: {normalized_proposal_id or 'general'}")
+    print(f"journal_path: {runtime_path('journals', 'trading_journal.jsonl')}\n")
+
 
 def resolve_paper(proposal_id: str | None = None, outcome: str | None = None, note: str = ""):
     """Resolve an executed paper position manually and append the outcome to the journal."""
@@ -543,7 +582,7 @@ def main():
         print("\nUsage: uv run main.py <command>")
         print(
             "Commands: analyze, index, package, doctor, markets, paper, replay, "
-            "data-verify, data-extract, research-priors, journal-report, resolve-paper, dashboard-api"
+            "data-verify, data-extract, research-priors, journal-report, resolve-paper, record-learning, dashboard-api"
         )
         sys.exit(0)
 
@@ -573,8 +612,8 @@ def main():
         sys.exit(0)
 
     if command == "paper":
-        category = sys.argv[2] if len(sys.argv) > 2 else "sports"
-        max_results = int(sys.argv[3]) if len(sys.argv) > 3 else 25
+        category = sys.argv[2] if len(sys.argv) > 2 else "tennis"
+        max_results = int(sys.argv[3]) if len(sys.argv) > 3 else 50
         paper(category=category, max_results=max_results)
         sys.exit(0)
 
@@ -609,6 +648,12 @@ def main():
         outcome = sys.argv[3] if len(sys.argv) > 3 else None
         note = " ".join(sys.argv[4:]) if len(sys.argv) > 4 else ""
         resolve_paper(proposal_id, outcome, note)
+        sys.exit(0)
+
+    if command == "record-learning":
+        proposal_id = sys.argv[2] if len(sys.argv) > 2 else None
+        note = " ".join(sys.argv[3:]) if len(sys.argv) > 3 else ""
+        record_learning(proposal_id, note)
         sys.exit(0)
 
     if command == "dashboard-api":

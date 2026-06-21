@@ -82,10 +82,11 @@ Trading-foundation commands added in this repo:
 uv run main.py doctor
 uv run main.py data-verify /path/to/data.tar.zst
 uv run main.py markets
-uv run main.py paper sports 25
+uv run main.py paper tennis 50
 uv run main.py research-priors
 uv run main.py journal-report
 uv run main.py resolve-paper <proposal_id> <won|lost|void>
+uv run main.py record-learning <proposal_id|general> "what we learned"
 uv run main.py replay [snapshot_parquet] [output_journal]
 uv run main.py dashboard-api 127.0.0.1 8000
 ```
@@ -97,6 +98,7 @@ Notes:
 - `research-priors` summarizes inherited Kalshi price-bucket priors
 - `journal-report` summarizes open positions, closed results, and PnL by strategy, price bucket, and time-to-event
 - `resolve-paper` manually settles a paper position by `proposal_id` and appends the outcome to the journal
+- `record-learning` appends an operator learning note to the same journal, either for one proposal or as a general note
 - `replay` runs strategy evaluation and paper execution from saved snapshot parquet only, writing a separate replay journal
 - `dashboard-api` serves the token-protected FastAPI backend for the deployed trade monitor
 

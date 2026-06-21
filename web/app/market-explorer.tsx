@@ -92,7 +92,15 @@ function groupMarkets(markets: MarketRow[]): MarketGroup[] {
   return Array.from(groups.values());
 }
 
-export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
+export function MarketExplorer({
+  markets,
+  scopeLabel,
+  maxVisibleGroups = 50,
+}: {
+  markets: MarketRow[];
+  scopeLabel?: string;
+  maxVisibleGroups?: number;
+}) {
   const [query, setQuery] = useState("");
   const [marketTitle, setMarketTitle] = useState("all");
   const [pricedOnly, setPricedOnly] = useState(false);
@@ -124,10 +132,12 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
       return matchesTitle && matchesPriced && matchesLiquid && (!normalizedQuery || searchable.includes(normalizedQuery));
     });
   }, [liquidOnly, marketGroups, marketTitle, pricedOnly, query]);
+  const visibleGroups = filteredGroups.slice(0, maxVisibleGroups);
 
   return (
     <div>
       <div className="explorer-controls">
+        {scopeLabel ? <span className="scope-pill">{scopeLabel}</span> : null}
         <label className="search-control">
           <Search size={16} aria-hidden="true" />
           <input
@@ -154,7 +164,7 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
           Liquid only
         </label>
         <span className="control-count">
-          {filteredGroups.length} / {marketGroups.length} markets
+          {visibleGroups.length} shown / {filteredGroups.length} filtered / {marketGroups.length} total
         </span>
       </div>
 
@@ -175,7 +185,7 @@ export function MarketExplorer({ markets }: { markets: MarketRow[] }) {
               </tr>
             </thead>
             <tbody>
-              {filteredGroups.slice(0, 40).map((group) => {
+              {visibleGroups.map((group) => {
                 const pricedRunners = group.runners.filter(isPriced);
                 const previewRunners = group.runners.slice(0, 4);
                 const pricePreview = pricedRunners.slice(0, 3);

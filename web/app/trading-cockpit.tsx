@@ -14,11 +14,13 @@ function GuardBadge({ guarded }: { guarded: boolean }) {
 
 export function TradingCockpit({
   openPositions,
+  openPositionsUnavailable = false,
   latestMarkets,
   overview,
   publicReadOnly,
 }: {
   openPositions: Position[];
+  openPositionsUnavailable?: boolean;
   latestMarkets: LatestMarkets;
   overview: Overview;
   publicReadOnly: boolean;
@@ -64,7 +66,7 @@ export function TradingCockpit({
           positions={openPositions}
           publicReadOnly={publicReadOnly}
           limit={12}
-          emptyLabel="No open paper bets yet."
+          emptyLabel={openPositionsUnavailable ? "Open paper bets are temporarily unavailable." : "No open paper bets yet."}
         />
       </section>
 

@@ -12,6 +12,7 @@ from .service import (
     closed_positions,
     dashboard_health,
     dashboard_overview,
+    dashboard_summary,
     latest_markets,
     latest_strategy_evaluation,
     live_odds,
@@ -95,14 +96,29 @@ def overview() -> dict:
     return dashboard_overview()
 
 
+@app.get("/api/dashboard/summary", dependencies=[Depends(require_dashboard_token)])
+def summary(
+    open_limit: int = Query(default=12, ge=1, le=100),
+    closed_limit: int = Query(default=8, ge=1, le=100),
+    recent_limit: int = Query(default=12, ge=1, le=100),
+    decision_limit: int = Query(default=100, ge=1, le=300),
+) -> dict:
+    return dashboard_summary(
+        open_limit=open_limit,
+        closed_limit=closed_limit,
+        recent_limit=recent_limit,
+        decision_limit=decision_limit,
+    )
+
+
 @app.get("/api/dashboard/open-positions", dependencies=[Depends(require_dashboard_token)])
-def dashboard_open_positions() -> dict:
-    return {"positions": open_positions()}
+def dashboard_open_positions(limit: Optional[int] = Query(default=None, ge=1, le=500)) -> dict:  # noqa: UP045
+    return {"positions": open_positions(limit=limit)}
 
 
 @app.get("/api/dashboard/closed-positions", dependencies=[Depends(require_dashboard_token)])
-def dashboard_closed_positions() -> dict:
-    return {"positions": closed_positions()}
+def dashboard_closed_positions(limit: Optional[int] = Query(default=None, ge=1, le=500)) -> dict:  # noqa: UP045
+    return {"positions": closed_positions(limit=limit)}
 
 
 @app.get("/api/dashboard/recent-events", dependencies=[Depends(require_dashboard_token)])
@@ -124,8 +140,8 @@ def dashboard_live_odds(
 
 
 @app.get("/api/dashboard/pnl-series", dependencies=[Depends(require_dashboard_token)])
-def dashboard_pnl_series() -> dict:
-    return pnl_series()
+def dashboard_pnl_series(limit: Optional[int] = Query(default=None, ge=1, le=1000)) -> dict:  # noqa: UP045
+    return pnl_series(limit=limit)
 
 
 @app.get("/api/dashboard/performance", dependencies=[Depends(require_dashboard_token)])

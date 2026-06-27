@@ -268,6 +268,21 @@ export type Health = {
   live_execution_available: boolean;
 };
 
+export type BackendFetchIssue = {
+  path: string;
+  message: string;
+};
+
+export type DashboardSummary = {
+  overview?: Partial<Overview>;
+  open_positions?: Position[];
+  closed_positions?: Position[];
+  recent_events?: RecentEvent[];
+  strategy_evaluation?: StrategyEvaluation;
+  strategy_decisions?: StrategyDecision[];
+  performance?: Partial<PerformanceBreakdown>;
+};
+
 const emptyDataQuality: DataQuality = {
   market_count: 0,
   selection_count: 0,
@@ -327,7 +342,16 @@ const emptyStrategyContext: StrategyContext = {
   recent_snapshot_collections: [],
 };
 
-async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
+const DEFAULT_BACKEND_TIMEOUT_MS = 9000;
+const HEALTH_BACKEND_TIMEOUT_MS = 7000;
+const OPTIONAL_BACKEND_TIMEOUT_MS = 5000;
+
+function backendTimeoutMs() {
+  const configured = Number(process.env.TRADER_BACKEND_TIMEOUT_MS ?? DEFAULT_BACKEND_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_BACKEND_TIMEOUT_MS;
+}
+
+async function backendFetch<T>(path: string, init?: RequestInit, timeoutMs = backendTimeoutMs()): Promise<T> {
   const baseUrl = process.env.TRADER_BACKEND_URL;
   const token = process.env.TRADER_BACKEND_TOKEN;
 
@@ -335,29 +359,50 @@ async function backendFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error("Vercel backend connection is not configured.");
   }
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
-    ...init,
-    cache: "no-store",
-    headers: {
-      "X-Rory-Dashboard-Token": token,
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  const url = `${baseUrl.replace(/\/$/, "")}${path}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!response.ok) {
+  try {
+    const response = await fetch(url, {
+      ...init,
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        "X-Rory-Dashboard-Token": token,
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+
+    if (response.ok) {
+      return response.json() as Promise<T>;
+    }
+
     const body = await response.text();
-    throw new Error(`Backend request failed for ${path}: ${response.status} ${body}`);
+    throw new Error(`Backend request failed for ${path}: ${response.status} ${body.slice(0, 240)}`);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Backend request timed out for ${path} after ${timeoutMs}ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  return response.json() as Promise<T>;
 }
 
-async function optionalBackendFetch<T>(path: string, fallback: T): Promise<T> {
+async function optionalBackendFetch<T>(
+  path: string,
+  fallback: T,
+  issues?: BackendFetchIssue[],
+  timeoutMs?: number,
+): Promise<T> {
   try {
-    return await backendFetch<T>(path);
+    return await backendFetch<T>(path, undefined, timeoutMs);
   } catch (error) {
-    console.warn(error instanceof Error ? error.message : error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(message);
+    issues?.push({ path, message });
     return fallback;
   }
 }
@@ -411,45 +456,55 @@ function normalizeHealth(health: Partial<Health> | undefined): Health {
   };
 }
 
+function normalizePerformance(performance: Partial<PerformanceBreakdown> | undefined): PerformanceBreakdown {
+  return {
+    strategy: performance?.strategy ?? [],
+    price_bucket: performance?.price_bucket ?? [],
+    time_window: performance?.time_window ?? [],
+  };
+}
+
 export async function getDashboardData() {
-  const [
-    health,
-    overview,
-    openPositions,
-    closedPositions,
-    recentEvents,
-    latestMarkets,
-    pnlSeries,
-    performance,
-    strategyContext,
-    strategyDecisions,
-  ] = await Promise.all([
-    backendFetch<Health>("/api/health"),
-    backendFetch<{ overview: Overview }>("/api/dashboard/overview"),
-    backendFetch<{ positions: Position[] }>("/api/dashboard/open-positions"),
-    backendFetch<{ positions: Position[] }>("/api/dashboard/closed-positions"),
-    backendFetch<{ events: RecentEvent[] }>("/api/dashboard/recent-events"),
-    optionalBackendFetch<LatestMarkets>("/api/dashboard/latest-markets", emptyLatestMarkets),
-    optionalBackendFetch<{ points: PnlPoint[] }>("/api/dashboard/pnl-series", { points: [] }),
-    optionalBackendFetch<PerformanceBreakdown>("/api/dashboard/performance", emptyPerformance),
-    optionalBackendFetch<StrategyContext>("/api/dashboard/strategy-context", emptyStrategyContext),
-    optionalBackendFetch<{ evaluation: StrategyEvaluation; decisions: StrategyDecision[] }>(
-      "/api/dashboard/strategy-decisions?limit=100",
-      { evaluation: null, decisions: [] },
+  const backendIssues: BackendFetchIssue[] = [];
+  const [health, summary, latestMarkets, pnlSeries, strategyContext] = await Promise.all([
+    optionalBackendFetch<Health>("/api/health", normalizeHealth(undefined), backendIssues, HEALTH_BACKEND_TIMEOUT_MS),
+    optionalBackendFetch<DashboardSummary>(
+      "/api/dashboard/summary?open_limit=12&closed_limit=8&recent_limit=12&decision_limit=100",
+      {},
+      backendIssues,
+    ),
+    optionalBackendFetch<LatestMarkets>(
+      "/api/dashboard/latest-markets",
+      emptyLatestMarkets,
+      backendIssues,
+      OPTIONAL_BACKEND_TIMEOUT_MS,
+    ),
+    optionalBackendFetch<{ points: PnlPoint[] }>(
+      "/api/dashboard/pnl-series?limit=160",
+      { points: [] },
+      backendIssues,
+      OPTIONAL_BACKEND_TIMEOUT_MS,
+    ),
+    optionalBackendFetch<StrategyContext>(
+      "/api/dashboard/strategy-context",
+      emptyStrategyContext,
+      backendIssues,
+      OPTIONAL_BACKEND_TIMEOUT_MS,
     ),
   ]);
 
   return {
     health: normalizeHealth(health),
-    overview: normalizeOverview(overview.overview),
-    openPositions: openPositions.positions,
-    closedPositions: closedPositions.positions,
-    recentEvents: recentEvents.events,
+    overview: normalizeOverview(summary.overview),
+    openPositions: summary.open_positions ?? [],
+    closedPositions: summary.closed_positions ?? [],
+    recentEvents: summary.recent_events ?? [],
     latestMarkets,
     pnlPoints: pnlSeries.points,
-    performance,
+    performance: normalizePerformance(summary.performance),
     strategyContext,
-    strategyEvaluation: strategyDecisions.evaluation,
-    strategyDecisions: strategyDecisions.decisions,
+    strategyEvaluation: summary.strategy_evaluation ?? null,
+    strategyDecisions: summary.strategy_decisions ?? [],
+    backendIssues,
   };
 }

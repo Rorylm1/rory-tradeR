@@ -7,6 +7,7 @@ import subprocess
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import pandas as pd
@@ -29,6 +30,8 @@ DEFAULT_MIN_AVAILABLE_SIZE = 2.0
 DEFAULT_MIN_MARKET_TOTAL_MATCHED = 100.0
 PAPER_SESSION_TIMEOUT_ENV_VAR = "RORY_TRADER_PAPER_SESSION_TIMEOUT_SECONDS"
 DEFAULT_PAPER_SESSION_TIMEOUT_SECONDS = 300
+_SUMMARY_CACHE_LOCK = Lock()
+_SUMMARY_CACHE: tuple[tuple[object, ...], dict[str, pd.DataFrame]] | None = None
 
 
 def _json_safe(value: Any) -> Any:
@@ -63,6 +66,100 @@ def _non_empty_performance_records(df: pd.DataFrame) -> list[dict[str, Any]]:
         return []
     executed = pd.to_numeric(df["executed_positions"], errors="coerce").fillna(0)
     return _records(df[executed > 0])
+
+
+def _has_json_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (dict, list)):
+        return True
+    try:
+        return not bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return True
+
+
+def _file_fingerprint(path: Path | None) -> tuple[str | None, int | None, int | None]:
+    if path is None:
+        return (None, None, None)
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return (str(path), None, None)
+    return (str(path), stat.st_mtime_ns, stat.st_size)
+
+
+def _cached_journal_summary(store: DashboardStore) -> dict[str, pd.DataFrame]:
+    global _SUMMARY_CACHE
+
+    snapshot_path = latest_snapshot_path()
+    cache_key = (
+        _file_fingerprint(store.journal_path),
+        _file_fingerprint(snapshot_path),
+    )
+    with _SUMMARY_CACHE_LOCK:
+        if _SUMMARY_CACHE is not None and _SUMMARY_CACHE[0] == cache_key:
+            return _SUMMARY_CACHE[1]
+
+    summary = journal_performance_summary(path=store.journal_path)
+    with _SUMMARY_CACHE_LOCK:
+        _SUMMARY_CACHE = (cache_key, summary)
+    return summary
+
+
+def _performance_breakdown_from_summary(summary: dict[str, pd.DataFrame]) -> dict[str, Any]:
+    return {
+        "strategy": _non_empty_performance_records(summary["strategy"]),
+        "price_bucket": _non_empty_performance_records(summary["price_bucket"]),
+        "time_window": _non_empty_performance_records(summary["time_window"]),
+    }
+
+
+def _recent_events_from_frame(events: pd.DataFrame, limit: int = 25) -> list[dict[str, Any]]:
+    if events.empty:
+        return []
+    rows = events.tail(limit).iloc[::-1]
+    return [
+        {
+            "event_type": row.get("event_type"),
+            "recorded_at": _json_safe(row.get("recorded_at")),
+            "payload": {},
+        }
+        for _, row in rows.iterrows()
+    ]
+
+
+def _latest_strategy_evaluation_from_frame(events: pd.DataFrame) -> dict[str, Any] | None:
+    if events.empty or "event_type" not in events.columns:
+        return None
+    rows = events[events["event_type"] == "strategy_evaluation"]
+    if rows.empty:
+        return None
+
+    row = rows.iloc[-1].to_dict()
+    row.pop("decisions", None)
+    return {key: _json_safe(value) for key, value in row.items() if _has_json_value(value)}
+
+
+def _recent_strategy_decisions_from_frame(events: pd.DataFrame, limit: int = 25) -> list[dict[str, Any]]:
+    if events.empty or "event_type" not in events.columns:
+        return []
+    rows = events[events["event_type"] == "strategy_evaluation"]
+    if rows.empty:
+        return []
+
+    row = rows.iloc[-1]
+    decisions = row.get("decisions")
+    if not isinstance(decisions, list):
+        return []
+    return [
+        {
+            **decision,
+            "recorded_at": _json_safe(row.get("recorded_at")),
+        }
+        for decision in decisions[:limit]
+        if isinstance(decision, dict)
+    ]
 
 
 def _plain_json(value: Any) -> Any:
@@ -256,14 +353,21 @@ def _safe_error_message(exc: Exception) -> str:
     return f"Betfair live odds fetch failed: {exc.__class__.__name__}"
 
 
-def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
+def dashboard_summary(
+    store: DashboardStore | None = None,
+    *,
+    open_limit: int | None = None,
+    closed_limit: int | None = None,
+    recent_limit: int = 25,
+    decision_limit: int = 25,
+) -> dict[str, Any]:
     store = store or DashboardStore()
     synced_events = store.sync_journal()
-    summary = journal_performance_summary(path=store.journal_path)
-    strategy_evaluation = latest_strategy_evaluation(store=store)
+    summary = _cached_journal_summary(store)
+    strategy_evaluation = _latest_strategy_evaluation_from_frame(summary["events"])
     latest_reviews = store.latest_live_reviews()
-    open_positions = _records(summary["open_positions"])
-    closed_positions = _records(summary["closed_positions"])
+    open_positions = _records(summary["open_positions"], limit=open_limit)
+    closed_positions = _records(summary["closed_positions"], limit=closed_limit)
 
     for row in open_positions + closed_positions:
         review = latest_reviews.get(str(row.get("proposal_id")))
@@ -273,9 +377,10 @@ def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
         "overview": _with_strategy_counts(_overview_row(summary), strategy_evaluation),
         "open_positions": open_positions,
         "closed_positions": closed_positions,
-        "recent_events": recent_events(store=store),
+        "recent_events": _recent_events_from_frame(summary["events"], limit=recent_limit),
         "strategy_evaluation": strategy_evaluation,
-        "strategy_decisions": recent_strategy_decisions(store=store),
+        "strategy_decisions": _recent_strategy_decisions_from_frame(summary["events"], limit=decision_limit),
+        "performance": _performance_breakdown_from_summary(summary),
         "synced_events": synced_events,
         "journal_path": str(store.journal_path),
         "database_path": str(store.db_path),
@@ -287,12 +392,8 @@ def dashboard_summary(store: DashboardStore | None = None) -> dict[str, Any]:
 def performance_breakdown(store: DashboardStore | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
     store.sync_journal()
-    summary = journal_performance_summary(path=store.journal_path)
-    return {
-        "strategy": _non_empty_performance_records(summary["strategy"]),
-        "price_bucket": _non_empty_performance_records(summary["price_bucket"]),
-        "time_window": _non_empty_performance_records(summary["time_window"]),
-    }
+    summary = _cached_journal_summary(store)
+    return _performance_breakdown_from_summary(summary)
 
 
 def recent_snapshot_collections(store: DashboardStore | None = None, limit: int = 8) -> list[dict[str, Any]]:
@@ -364,7 +465,6 @@ def strategy_context(category: str = "tennis", store: DashboardStore | None = No
 
 def dashboard_health(store: DashboardStore | None = None, validate_betfair: bool = True) -> dict[str, Any]:
     store = store or DashboardStore()
-    store.sync_journal()
     stale_after_seconds = int(os.getenv(STALE_AFTER_SECONDS_ENV_VAR, str(DEFAULT_STALE_AFTER_SECONDS)))
     adapter = BetfairAdapter()
     validation_payload: dict[str, Any]
@@ -409,12 +509,12 @@ def dashboard_overview(store: DashboardStore | None = None) -> dict[str, Any]:
     }
 
 
-def open_positions(store: DashboardStore | None = None) -> list[dict[str, Any]]:
-    return dashboard_summary(store=store)["open_positions"]
+def open_positions(store: DashboardStore | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+    return dashboard_summary(store=store, open_limit=limit)["open_positions"]
 
 
-def closed_positions(store: DashboardStore | None = None) -> list[dict[str, Any]]:
-    return dashboard_summary(store=store)["closed_positions"]
+def closed_positions(store: DashboardStore | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+    return dashboard_summary(store=store, closed_limit=limit)["closed_positions"]
 
 
 def recent_events(store: DashboardStore | None = None, limit: int = 25) -> list[dict[str, Any]]:
@@ -636,7 +736,7 @@ def _truncate_text(value: str, limit: int = 8000) -> str:
     return value[:limit] + "\n...[truncated]"
 
 
-def pnl_series(store: DashboardStore | None = None) -> dict[str, Any]:
+def pnl_series(store: DashboardStore | None = None, limit: int | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
     df = journal_dataframe(path=store.journal_path)
     if df.empty:
@@ -668,6 +768,9 @@ def pnl_series(store: DashboardStore | None = None) -> dict[str, Any]:
                 "cumulative_stake": round(stake, 4),
             }
         )
+
+    if limit is not None:
+        points = points[-limit:]
 
     return {"points": points}
 

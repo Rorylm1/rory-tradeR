@@ -18,6 +18,30 @@ import { WhatIsGoingOnPanel } from "./what-is-going-on-panel";
 
 export const dynamic = "force-dynamic";
 
+function BackendIssueBanner({
+  issues,
+}: {
+  issues: { path: string; message: string }[];
+}) {
+  if (issues.length === 0) {
+    return null;
+  }
+
+  const firstIssue = issues[0];
+
+  return (
+    <section className="backend-warning">
+      <AlertTriangle size={18} aria-hidden="true" />
+      <div>
+        <strong>Some dashboard data is temporarily unavailable</strong>
+        <span>
+          {issues.length} backend request{issues.length === 1 ? "" : "s"} failed. First issue: {firstIssue.path}.
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return <span className={ok ? "pill good" : "pill warn"}>{label}</span>;
 }
@@ -130,7 +154,10 @@ export default async function DashboardPage() {
     strategyContext,
     strategyEvaluation,
     strategyDecisions,
+    backendIssues,
   } = data;
+  const openPositionsIssue = backendIssues.find((issue) => issue.path === "/api/dashboard/open-positions");
+  const closedPositionsIssue = backendIssues.find((issue) => issue.path === "/api/dashboard/closed-positions");
   const betfairReady = health.betfair.ok === true;
   const dataFresh = !health.snapshots.stale;
   const oddsUsable =
@@ -177,6 +204,7 @@ export default async function DashboardPage() {
           <span>Review controls only. No live order endpoint exists.</span>
         </div>
       </section>
+      <BackendIssueBanner issues={backendIssues} />
 
       <section className="metrics-grid">
         <Metric label="Net PnL" value={formatMoney(overview.total_net_pnl)} icon={TrendingUp} />
@@ -190,6 +218,7 @@ export default async function DashboardPage() {
       <PaperSessionPanel readOnly={publicReadOnly} />
       <TradingCockpit
         openPositions={openPositions}
+        openPositionsUnavailable={Boolean(openPositionsIssue)}
         latestMarkets={latestMarkets}
         overview={overview}
         publicReadOnly={publicReadOnly}
@@ -225,9 +254,14 @@ export default async function DashboardPage() {
         <section className="panel">
           <div className="panel-heading">
             <h2>Closed Positions</h2>
-            <p>{overview.closed_positions} settled</p>
+            <p>{closedPositionsIssue ? "History temporarily unavailable" : `${overview.closed_positions} settled`}</p>
           </div>
-          <PositionTable positions={closedPositions.slice(0, 8)} closed publicReadOnly={publicReadOnly} />
+          <PositionTable
+            positions={closedPositions.slice(0, 8)}
+            closed
+            publicReadOnly={publicReadOnly}
+            emptyLabel={closedPositionsIssue ? "Closed-position history is temporarily unavailable." : undefined}
+          />
         </section>
       </section>
     </main>

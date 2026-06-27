@@ -120,6 +120,34 @@ textarea {
   font-size: 14px;
 }
 
+.backend-warning {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid rgba(166, 111, 0, 0.26);
+  border-radius: 8px;
+  background: rgba(166, 111, 0, 0.08);
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  color: var(--amber);
+}
+
+.backend-warning strong,
+.backend-warning span {
+  display: block;
+}
+
+.backend-warning strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.backend-warning span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .live-odds-strip {
   display: flex;
   align-items: center;
@@ -140,6 +168,38 @@ textarea {
 .metrics-grid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   margin-bottom: 12px;
+}
+
+.loading-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.loading-grid > div,
+.loading-panel {
+  min-height: 84px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: linear-gradient(90deg, #ffffff 0%, #eef3f5 50%, #ffffff 100%);
+  background-size: 220% 100%;
+  animation: loading-shimmer 1.4s ease-in-out infinite;
+  box-shadow: var(--shadow);
+}
+
+.loading-panel {
+  min-height: 260px;
+}
+
+@keyframes loading-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+
+  100% {
+    background-position: -120% 0;
+  }
 }
 
 .metric {

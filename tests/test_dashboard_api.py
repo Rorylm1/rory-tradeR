@@ -135,6 +135,30 @@ def test_dashboard_overview_handles_snapshot_only_journal(monkeypatch, tmp_path)
     assert payload["overview"]["open_positions"] == 0
 
 
+def test_dashboard_summary_limits_first_screen_payload(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    _seed_open_position()
+    _seed_open_position()
+    strategy = BackPriceBucketStrategy(BackPriceBucketConfig(max_spread=0.04))
+    decisions = strategy.evaluate_decisions([_snapshot()])
+    JournalStore().record_strategy_evaluation(strategy.definition, decisions, snapshots_seen=1)
+
+    response = client.get(
+        "/api/dashboard/summary?open_limit=1&closed_limit=1&recent_limit=1&decision_limit=1",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["overview"]["open_positions"] == 2
+    assert len(payload["open_positions"]) == 1
+    assert len(payload["closed_positions"]) == 0
+    assert len(payload["recent_events"]) == 1
+    assert payload["performance"]["strategy"][0]["executed_positions"] == 2
+    assert payload["strategy_evaluation"]["snapshots_seen"] == 1
+    assert len(payload["strategy_decisions"]) == 1
+
+
 def test_strategy_decisions_endpoint_reads_latest_evaluation(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     store = JournalStore()

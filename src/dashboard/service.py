@@ -441,7 +441,9 @@ def dashboard_summary(
         row["live_review"] = review
 
     return {
-        "overview": _with_strategy_counts(_with_settlement_counts(_overview_row(summary), summary), strategy_evaluation),
+        "overview": _with_strategy_counts(
+            _with_settlement_counts(_overview_row(summary), summary), strategy_evaluation
+        ),
         "open_positions": open_positions,
         "closed_positions": closed_positions,
         "recent_events": _recent_events_from_frame(summary["events"], limit=recent_limit),

@@ -4,6 +4,7 @@ import math
 import os
 import re
 import subprocess
+from collections import deque
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +16,7 @@ import pandas as pd
 from src.common.paths import REPO_ROOT, runtime_path
 from src.exchanges import BetfairAdapter
 from src.exchanges.common.models import MarketSnapshot
-from src.trading.journal import JournalStore, journal_dataframe, journal_performance_summary
+from src.trading.journal import JournalStore, journal_performance_summary
 from src.trading.market_history import flatten_market_snapshots, latest_snapshot_path
 from src.trading.strategy import strategy_for_category
 
@@ -48,6 +49,18 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     return value
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(parsed) or math.isinf(parsed):
+        return None
+    return parsed
 
 
 def _records(df: pd.DataFrame, limit: int | None = None) -> list[dict[str, Any]]:
@@ -738,41 +751,41 @@ def _truncate_text(value: str, limit: int = 8000) -> str:
 
 def pnl_series(store: DashboardStore | None = None, limit: int | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
-    df = journal_dataframe(path=store.journal_path)
-    if df.empty:
-        return {"points": []}
-
-    if "recorded_at" not in df.columns:
-        return {"points": []}
-
-    rows = df.sort_values("recorded_at").copy()
+    events = JournalStore(path=store.journal_path).load_events()
     realized = 0.0
     stake = 0.0
-    points: list[dict[str, Any]] = []
+    points: list[dict[str, Any]] | deque[dict[str, Any]]
+    points = deque(maxlen=limit) if limit is not None else []
 
-    for _, row in rows.iterrows():
+    for row in events:
         event_type = row.get("event_type")
-        accepted = row.get("accepted")
-        if event_type == "execution" and pd.notna(accepted) and bool(accepted) and pd.notna(row.get("stake")):
-            stake += float(row.get("stake"))
-        elif event_type == "resolution" and pd.notna(row.get("realized_pnl")):
-            realized += float(row.get("realized_pnl"))
+        payload = row.get("payload", {})
+        if not isinstance(payload, dict):
+            continue
+
+        if event_type == "execution" and payload.get("accepted") is True:
+            filled_stake = _float_or_none(payload.get("stake"))
+            if filled_stake is None:
+                continue
+            stake += filled_stake
+        elif event_type == "resolution":
+            realized_pnl = _float_or_none(payload.get("realized_pnl"))
+            if realized_pnl is None:
+                continue
+            realized += realized_pnl
         else:
             continue
 
         points.append(
             {
-                "recorded_at": _json_safe(row.get("recorded_at")),
+                "recorded_at": row.get("recorded_at"),
                 "event_type": event_type,
                 "cumulative_realized_pnl": round(realized, 4),
                 "cumulative_stake": round(stake, 4),
             }
         )
 
-    if limit is not None:
-        points = points[-limit:]
-
-    return {"points": points}
+    return {"points": list(points)}
 
 
 def latest_strategy_evaluation(store: DashboardStore | None = None) -> dict[str, Any] | None:

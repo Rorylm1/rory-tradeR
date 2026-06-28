@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -61,6 +62,23 @@ def _float_or_none(value: Any) -> float | None:
     if math.isnan(parsed) or math.isinf(parsed):
         return None
     return parsed
+
+
+def _iter_journal_events(path: Path, event_types: set[str] | None = None):
+    if not path.exists():
+        return
+
+    needles = None
+    if event_types is not None:
+        needles = [f'"event_type": "{event_type}"' for event_type in event_types]
+
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            if needles is not None and not any(needle in line for needle in needles):
+                continue
+            yield json.loads(line)
 
 
 def _records(df: pd.DataFrame, limit: int | None = None) -> list[dict[str, Any]]:
@@ -375,7 +393,6 @@ def dashboard_summary(
     decision_limit: int = 25,
 ) -> dict[str, Any]:
     store = store or DashboardStore()
-    synced_events = store.sync_journal()
     summary = _cached_journal_summary(store)
     strategy_evaluation = _latest_strategy_evaluation_from_frame(summary["events"])
     latest_reviews = store.latest_live_reviews()
@@ -394,7 +411,7 @@ def dashboard_summary(
         "strategy_evaluation": strategy_evaluation,
         "strategy_decisions": _recent_strategy_decisions_from_frame(summary["events"], limit=decision_limit),
         "performance": _performance_breakdown_from_summary(summary),
-        "synced_events": synced_events,
+        "synced_events": 0,
         "journal_path": str(store.journal_path),
         "database_path": str(store.db_path),
         "live_execution_available": False,
@@ -404,7 +421,6 @@ def dashboard_summary(
 
 def performance_breakdown(store: DashboardStore | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
-    store.sync_journal()
     summary = _cached_journal_summary(store)
     return _performance_breakdown_from_summary(summary)
 
@@ -751,13 +767,12 @@ def _truncate_text(value: str, limit: int = 8000) -> str:
 
 def pnl_series(store: DashboardStore | None = None, limit: int | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
-    events = JournalStore(path=store.journal_path).load_events()
     realized = 0.0
     stake = 0.0
     points: list[dict[str, Any]] | deque[dict[str, Any]]
     points = deque(maxlen=limit) if limit is not None else []
 
-    for row in events:
+    for row in _iter_journal_events(store.journal_path, {"execution", "resolution"}):
         event_type = row.get("event_type")
         payload = row.get("payload", {})
         if not isinstance(payload, dict):

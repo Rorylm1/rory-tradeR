@@ -339,6 +339,22 @@ def test_pnl_series_endpoint_reads_journal_realized_pnl(monkeypatch, tmp_path):
     assert points[-1]["cumulative_realized_pnl"] > 0
 
 
+def test_limited_pnl_series_keeps_cumulative_totals(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    _seed_open_position()
+    _seed_open_position()
+
+    response = client.get(
+        "/api/dashboard/pnl-series?limit=1",
+        headers={"X-Rory-Dashboard-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    points = response.json()["points"]
+    assert len(points) == 1
+    assert points[0]["cumulative_stake"] == 4.0
+
+
 def test_performance_endpoint_returns_learning_breakdowns(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     proposal_id = _seed_open_position()

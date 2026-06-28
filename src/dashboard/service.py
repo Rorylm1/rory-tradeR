@@ -5,7 +5,6 @@ import math
 import os
 import re
 import subprocess
-from collections import deque
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,6 +80,38 @@ def _iter_journal_events(path: Path, event_types: set[str] | None = None):
             yield json.loads(line)
 
 
+def _iter_journal_events_reverse(path: Path, event_types: set[str] | None = None):
+    if not path.exists():
+        return
+
+    needles = None
+    if event_types is not None:
+        needles = [f'"event_type": "{event_type}"'.encode() for event_type in event_types]
+
+    chunk_size = 1024 * 1024
+    pending = b""
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        position = handle.tell()
+
+        while position > 0:
+            read_size = min(chunk_size, position)
+            position -= read_size
+            handle.seek(position)
+            chunk = handle.read(read_size)
+            lines = (chunk + pending).split(b"\n")
+            if position > 0:
+                pending = lines[0]
+                lines = lines[1:]
+
+            for line in reversed(lines):
+                if not line.strip():
+                    continue
+                if needles is not None and not any(needle in line for needle in needles):
+                    continue
+                yield json.loads(line)
+
+
 def _records(df: pd.DataFrame, limit: int | None = None) -> list[dict[str, Any]]:
     if df.empty:
         return []
@@ -131,11 +162,9 @@ def _cached_journal_summary(store: DashboardStore) -> dict[str, pd.DataFrame]:
     with _SUMMARY_CACHE_LOCK:
         if _SUMMARY_CACHE is not None and _SUMMARY_CACHE[0] == cache_key:
             return _SUMMARY_CACHE[1]
-
-    summary = journal_performance_summary(path=store.journal_path)
-    with _SUMMARY_CACHE_LOCK:
+        summary = journal_performance_summary(path=store.journal_path)
         _SUMMARY_CACHE = (cache_key, summary)
-    return summary
+        return summary
 
 
 def _performance_breakdown_from_summary(summary: dict[str, pd.DataFrame]) -> dict[str, Any]:
@@ -427,12 +456,14 @@ def performance_breakdown(store: DashboardStore | None = None) -> dict[str, Any]
 
 def recent_snapshot_collections(store: DashboardStore | None = None, limit: int = 8) -> list[dict[str, Any]]:
     store = store or DashboardStore()
-    snapshots: deque[dict[str, Any]] = deque(maxlen=limit)
-    for row in _iter_journal_events(store.journal_path, {"snapshot_collection"}):
+    snapshots: list[dict[str, Any]] = []
+    for row in _iter_journal_events_reverse(store.journal_path, {"snapshot_collection"}):
         payload = dict(row.get("payload", {}))
         payload["recorded_at"] = row.get("recorded_at")
         snapshots.append(payload)
-    return list(reversed(snapshots))
+        if len(snapshots) >= limit:
+            break
+    return snapshots
 
 
 def strategy_context(category: str = "tennis", store: DashboardStore | None = None) -> dict[str, Any]:
@@ -762,12 +793,56 @@ def _truncate_text(value: str, limit: int = 8000) -> str:
 
 def pnl_series(store: DashboardStore | None = None, limit: int | None = None) -> dict[str, Any]:
     store = store or DashboardStore()
-    realized = 0.0
-    stake = 0.0
-    points: list[dict[str, Any]] | deque[dict[str, Any]]
-    points = deque(maxlen=limit) if limit is not None else []
+    if limit is None:
+        realized = 0.0
+        stake = 0.0
+        points: list[dict[str, Any]] = []
+        rows = _iter_journal_events(store.journal_path, {"execution", "resolution"})
+    else:
+        overview = _overview_row(_cached_journal_summary(store))
+        realized = float(overview.get("total_realized_pnl") or 0.0)
+        stake = float(overview.get("total_stake") or 0.0)
+        reversed_points: list[dict[str, Any]] = []
+        for row in _iter_journal_events_reverse(store.journal_path, {"execution", "resolution"}):
+            event_type = row.get("event_type")
+            payload = row.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
 
-    for row in _iter_journal_events(store.journal_path, {"execution", "resolution"}):
+            if event_type == "execution" and payload.get("accepted") is True:
+                filled_stake = _float_or_none(payload.get("stake"))
+                if filled_stake is None:
+                    continue
+                reversed_points.append(
+                    {
+                        "recorded_at": row.get("recorded_at"),
+                        "event_type": event_type,
+                        "cumulative_realized_pnl": round(realized, 4),
+                        "cumulative_stake": round(stake, 4),
+                    }
+                )
+                stake -= filled_stake
+            elif event_type == "resolution":
+                realized_pnl = _float_or_none(payload.get("realized_pnl"))
+                if realized_pnl is None:
+                    continue
+                reversed_points.append(
+                    {
+                        "recorded_at": row.get("recorded_at"),
+                        "event_type": event_type,
+                        "cumulative_realized_pnl": round(realized, 4),
+                        "cumulative_stake": round(stake, 4),
+                    }
+                )
+                realized -= realized_pnl
+            else:
+                continue
+
+            if len(reversed_points) >= limit:
+                break
+        return {"points": list(reversed(reversed_points))}
+
+    for row in rows:
         event_type = row.get("event_type")
         payload = row.get("payload", {})
         if not isinstance(payload, dict):
@@ -795,7 +870,7 @@ def pnl_series(store: DashboardStore | None = None, limit: int | None = None) ->
             }
         )
 
-    return {"points": list(points)}
+    return {"points": points}
 
 
 def latest_strategy_evaluation(store: DashboardStore | None = None) -> dict[str, Any] | None:

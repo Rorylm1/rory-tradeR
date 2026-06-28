@@ -18,6 +18,7 @@ from src.exchanges import BetfairAdapter
 from src.exchanges.common.models import MarketSnapshot
 from src.trading.journal import JournalStore, journal_performance_summary
 from src.trading.market_history import flatten_market_snapshots, latest_snapshot_path
+from src.trading.settlement import settlement_due_positions
 from src.trading.strategy import strategy_for_category
 
 from .store import DashboardStore
@@ -249,8 +250,15 @@ def _overview_row(summary: dict[str, pd.DataFrame]) -> dict[str, Any]:
             "total_realized_pnl": 0.0,
             "total_unrealized_pnl": 0.0,
             "total_net_pnl": 0.0,
+            "overdue_unresolved_positions": 0,
         }
     return {key: _json_safe(value) for key, value in overview.iloc[0].to_dict().items()}
+
+
+def _with_settlement_counts(overview: dict[str, Any], summary: dict[str, pd.DataFrame]) -> dict[str, Any]:
+    overview = dict(overview)
+    overview["overdue_unresolved_positions"] = len(settlement_due_positions(summary))
+    return overview
 
 
 def _with_strategy_counts(overview: dict[str, Any], evaluation: dict[str, Any] | None) -> dict[str, Any]:
@@ -433,7 +441,7 @@ def dashboard_summary(
         row["live_review"] = review
 
     return {
-        "overview": _with_strategy_counts(_overview_row(summary), strategy_evaluation),
+        "overview": _with_strategy_counts(_with_settlement_counts(_overview_row(summary), summary), strategy_evaluation),
         "open_positions": open_positions,
         "closed_positions": closed_positions,
         "recent_events": _recent_events_from_frame(summary["events"], limit=recent_limit),

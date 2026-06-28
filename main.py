@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from argparse import ArgumentParser
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from src.trading.journal import JournalStore, journal_performance_summary
 from src.trading.market_history import latest_snapshot_path, load_market_snapshots, save_market_snapshots
 from src.trading.paper_broker import PaperBroker
 from src.trading.research import inherited_market_priors
+from src.trading.settlement import settle_due_positions, settlement_config_from_env
 from src.trading.strategy import StrategyDecision, strategy_for_category
 
 load_dotenv()
@@ -585,6 +587,65 @@ def resolve_paper(proposal_id: str | None = None, outcome: str | None = None, no
     print(f"journal_path: {runtime_path('journals', 'trading_journal.jsonl')}\n")
 
 
+def settle_paper(args: list[str] | None = None):
+    """Dry-run or apply Betfair market-book settlement for overdue paper positions."""
+    defaults = settlement_config_from_env()
+    parser = ArgumentParser(prog="uv run main.py settle-paper")
+    parser.add_argument("--apply", action="store_true", help="append resolution events; default is dry-run only")
+    parser.add_argument("--max-markets", type=int, default=defaults.max_markets)
+    parser.add_argument("--max-positions", type=int, default=defaults.max_positions)
+    parser.add_argument("--min-age-hours", type=float, default=defaults.min_age_hours)
+    parsed = parser.parse_args(args or [])
+
+    if parsed.max_markets < 1 or parsed.max_positions < 1:
+        print("--max-markets and --max-positions must be at least 1")
+        sys.exit(1)
+    if parsed.min_age_hours < 0:
+        print("--min-age-hours must be non-negative")
+        sys.exit(1)
+
+    report = settle_due_positions(
+        dry_run=not parsed.apply,
+        max_markets=parsed.max_markets,
+        max_positions=parsed.max_positions,
+        min_age_hours=parsed.min_age_hours,
+    )
+
+    print("\nPaper settlement report:\n")
+    print(f"mode: {'apply' if parsed.apply else 'dry-run'}")
+    print(f"checked_at: {report['checked_at']}")
+    print(f"settlement_cutoff: {report['settlement_cutoff']}")
+    print(f"due_positions: {report['due_positions']}")
+    print(f"checked_markets: {report['checked_markets']}")
+    print(f"market_books_returned: {report['market_books_returned']}")
+    print(f"settleable_positions: {report['settleable_positions']}")
+    print(f"settled_positions: {report['settled_positions']}")
+    print(f"skipped_positions: {report['skipped_positions']}")
+    print(f"skipped_reasons: {report['skipped_reasons'] or '{}'}")
+    print(f"market_status_counts: {report['market_status_counts'] or '{}'}")
+    print(f"runner_status_counts: {report['runner_status_counts'] or '{}'}")
+    print(f"live_execution_available: {report['live_execution_available']}")
+
+    candidates = report["candidates"][:20]
+    if candidates:
+        print("\nSettlement candidates:")
+        for candidate in candidates:
+            print(
+                "  "
+                f"{candidate['proposal_id']} {candidate['selection_name']} "
+                f"outcome={candidate['resolved_outcome']} "
+                f"realized={candidate['realized_pnl']:.2f} "
+                f"runner_status={candidate['runner_status']}"
+            )
+        if len(report["candidates"]) > len(candidates):
+            print(f"  ... {len(report['candidates']) - len(candidates)} more")
+
+    if not parsed.apply:
+        print("\nDry-run only. Re-run with --apply to append resolution events.\n")
+    else:
+        print(f"\njournal_path: {runtime_path('journals', 'trading_journal.jsonl')}\n")
+
+
 def data_verify(path: str | None = None):
     """Compute SHA-256 and inspect an archive before extraction."""
     if not path:
@@ -634,7 +695,8 @@ def main():
         print("\nUsage: uv run main.py <command>")
         print(
             "Commands: analyze, index, package, doctor, markets, paper, replay, "
-            "data-verify, data-extract, research-priors, journal-report, resolve-paper, record-learning, dashboard-api"
+            "data-verify, data-extract, research-priors, journal-report, resolve-paper, settle-paper, "
+            "record-learning, dashboard-api"
         )
         sys.exit(0)
 
@@ -702,6 +764,10 @@ def main():
         resolve_paper(proposal_id, outcome, note)
         sys.exit(0)
 
+    if command == "settle-paper":
+        settle_paper(sys.argv[2:])
+        sys.exit(0)
+
     if command == "record-learning":
         proposal_id = sys.argv[2] if len(sys.argv) > 2 else None
         note = " ".join(sys.argv[3:]) if len(sys.argv) > 3 else ""
@@ -717,7 +783,7 @@ def main():
     print(f"Unknown command: {command}")
     print(
         "Commands: analyze, index, package, doctor, markets, paper, replay, "
-        "data-verify, data-extract, research-priors, journal-report, resolve-paper, dashboard-api"
+        "data-verify, data-extract, research-priors, journal-report, resolve-paper, settle-paper, dashboard-api"
     )
     sys.exit(1)
 

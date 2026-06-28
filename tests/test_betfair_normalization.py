@@ -190,6 +190,25 @@ class TestBetfairMarketDiscovery:
         assert len(snapshots) == 5
         assert book_calls == [["1.0", "1.1"], ["1.2", "1.3"], ["1.4"]]
 
+    def test_list_market_books_batches_ids_for_settlement(self, betfair_book: dict, monkeypatch):
+        adapter = BetfairAdapter()
+        adapter.market_book_batch_size = 2
+        monkeypatch.setattr(adapter, "_ensure_session_token", lambda: None)
+        book_calls = []
+
+        def fake_rpc_request(method: str, params: dict):
+            assert method.endswith("listMarketBook")
+            book_calls.append(params["marketIds"])
+            assert params["priceProjection"]["priceData"] == ["EX_TRADED"]
+            return [{**betfair_book, "marketId": market_id} for market_id in params["marketIds"]]
+
+        monkeypatch.setattr(adapter, "_rpc_request", fake_rpc_request)
+
+        books = adapter.list_market_books(["1.0", "1.1", "1.0", "1.2"])
+
+        assert [book["marketId"] for book in books] == ["1.0", "1.1", "1.2"]
+        assert book_calls == [["1.0", "1.1"], ["1.2"]]
+
     def test_tennis_list_markets_uses_high_signal_market_types(
         self, betfair_catalogue: dict, betfair_book: dict, monkeypatch
     ):

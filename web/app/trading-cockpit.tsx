@@ -61,6 +61,10 @@ export function TradingCockpit({
             <Clock3 size={16} aria-hidden="true" />
             {overview.closed_positions} settled
           </span>
+          <span>
+            <Clock3 size={16} aria-hidden="true" />
+            {overview.overdue_unresolved_positions} overdue
+          </span>
         </div>
         <PositionTable
           positions={openPositions}

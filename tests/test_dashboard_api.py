@@ -151,6 +151,7 @@ def test_dashboard_summary_limits_first_screen_payload(monkeypatch, tmp_path):
     assert response.status_code == 200
     payload = response.json()
     assert payload["overview"]["open_positions"] == 2
+    assert payload["overview"]["overdue_unresolved_positions"] == 0
     assert len(payload["open_positions"]) == 1
     assert len(payload["closed_positions"]) == 0
     assert len(payload["recent_events"]) == 1

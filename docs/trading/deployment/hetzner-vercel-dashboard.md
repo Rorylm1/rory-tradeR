@@ -287,6 +287,30 @@ enforces stale/auth/exposure/loss controls, and appends to `/opt/rory-trader/run
 The dashboard should then show fresh snapshot status, journal activity, any open paper positions, and the learning
 review tables grouped by strategy, price bucket, and time-to-event.
 
+Settle overdue paper positions with a dry run first:
+
+```bash
+sudo -u rory-trader bash -lc 'cd /opt/rory-trader && scripts/run-settlement-session.sh'
+```
+
+If the dry run shows expected Betfair `CLOSED` markets and runner statuses, apply a bounded batch:
+
+```bash
+sudo -u rory-trader bash -lc 'cd /opt/rory-trader && scripts/run-settlement-session.sh --apply --max-positions 500 --max-markets 50'
+```
+
+The apply path appends `resolution` events only. It calculates realized PnL from the paper fill, never places live
+orders, and refuses live-enabled environments. A recurring settlement timer should call the same script and can be
+disabled with:
+
+```bash
+sudo systemctl disable --now rory-trader-settlement.timer
+sudo journalctl -u rory-trader-settlement -n 80 --no-pager
+```
+
+The dashboard's `Overdue settlement` count is the backlog of open paper positions old enough to be checked against
+settled Betfair market books.
+
 The dashboard API also exposes a token-protected operator trigger:
 
 ```bash

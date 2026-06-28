@@ -12,6 +12,7 @@ export type Overview = {
   total_realized_pnl: number;
   total_unrealized_pnl: number;
   total_net_pnl: number;
+  overdue_unresolved_positions: number;
   latest_strategy_decisions: number;
   latest_strategy_acceptances: number;
   latest_strategy_rejections: number;
@@ -422,6 +423,7 @@ function normalizeOverview(overview: Partial<Overview> | undefined): Overview {
     total_realized_pnl: 0,
     total_unrealized_pnl: 0,
     total_net_pnl: 0,
+    overdue_unresolved_positions: 0,
     latest_strategy_decisions: 0,
     latest_strategy_acceptances: 0,
     latest_strategy_rejections: 0,

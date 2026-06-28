@@ -211,6 +211,7 @@ export default async function DashboardPage() {
         <Metric label="Realized PnL" value={formatMoney(overview.total_realized_pnl)} icon={CheckCircle2} />
         <Metric label="Unrealized PnL" value={formatMoney(overview.total_unrealized_pnl)} icon={Activity} />
         <Metric label="Open positions" value={String(overview.open_positions)} icon={Activity} />
+        <Metric label="Overdue settlement" value={String(overview.overdue_unresolved_positions)} icon={Clock3} />
         <Metric label="Saved markets" value={String(latestMarkets.market_count)} icon={Database} />
         <Metric label="Usable odds" value={String(latestMarkets.data_quality.tradeable_selection_count)} icon={CheckCircle2} />
       </section>

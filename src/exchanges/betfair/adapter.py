@@ -282,6 +282,23 @@ class BetfairAdapter(ExchangeAdapter):
             snapshots.append(snapshot)
         return snapshots
 
+    def list_market_books(self, market_ids: list[str]) -> list[dict]:
+        self._ensure_session_token()
+        ids = list(dict.fromkeys(str(market_id) for market_id in market_ids if market_id))
+        books = []
+        batch_size = max(1, self.market_book_batch_size)
+        for index in range(0, len(ids), batch_size):
+            books.extend(
+                self._rpc_request(
+                    "SportsAPING/v1.0/listMarketBook",
+                    {
+                        "marketIds": ids[index : index + batch_size],
+                        "priceProjection": {"priceData": ["EX_TRADED"]},
+                    },
+                )
+            )
+        return books
+
     def build_order_quote(self, order_intent: OrderIntent) -> OrderQuote:
         return OrderQuote(
             exchange=self.name,

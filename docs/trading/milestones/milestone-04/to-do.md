@@ -10,6 +10,7 @@ Build the paper-trading engine, inherited-priors research loop, and append-only 
 - [x] Implement paper fill simulation against normalized prices.
 - [x] Implement commission and slippage models.
 - [x] Implement open-position and closed-position accounting.
+- [x] Implement dry-run-first Betfair paper settlement for overdue open positions.
 - [x] Implement realized and unrealized PnL tracking.
 - [x] Implement max stake, max exposure, and max daily loss controls.
 - [x] Implement stale-data and auth-failure kill switches.
@@ -26,5 +27,6 @@ Build the paper-trading engine, inherited-priors research loop, and append-only 
 ## Exit Criteria
 
 - [x] Paper sessions can run without any live exchange execution.
+- [x] Paper settlement can append outcomes without any live exchange execution.
 - [x] Journal output is deterministic and reviewable.
 - [x] Risk controls fail closed rather than continuing in an unsafe state.

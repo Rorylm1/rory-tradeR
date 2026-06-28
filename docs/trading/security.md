@@ -66,10 +66,12 @@ Runtime-state behavior:
 - proposal generation and paper fills should be reviewable from local journal output before any live promotion
 - deployed dashboard API access should require `RORY_TRADER_DASHBOARD_TOKEN`
 - Vercel may hold dashboard auth and backend API token values, but must not hold Betfair credentials
-- recurring VPS jobs may run only through the bounded `rory-trader-paper-session.service` and
-  `rory-trader-paper-session.timer`
-- the paper loop must log to journald, use `RORY_TRADER_LIVE_ENABLED=false`, and be disable-able with
-  `sudo systemctl disable --now rory-trader-paper-session.timer`
+- recurring VPS jobs may run only through bounded paper-only systemd units:
+  `rory-trader-paper-session.service` / `rory-trader-paper-session.timer` for proposals and fills, and
+  `rory-trader-settlement.service` / `rory-trader-settlement.timer` for settled-market journal resolutions
+- the paper and settlement loops must log to journald, use `RORY_TRADER_LIVE_ENABLED=false`, and be disable-able with
+  `sudo systemctl disable --now rory-trader-paper-session.timer` and
+  `sudo systemctl disable --now rory-trader-settlement.timer`
 - fresh Betfair odds may be shown in the dashboard from explicit paper snapshot runs or operator-triggered read-only live odds refreshes, but live order execution must remain unavailable
 - stale snapshots, missing executable prices, delayed market data, in-play markets, and thin books should be surfaced as dashboard guardrails before any operator review
 
@@ -81,6 +83,9 @@ Paper risk defaults:
 - max daily realized loss before new paper fills stop: `RORY_TRADER_MAX_DAILY_LOSS=20`
 - stale snapshot kill switch: `RORY_TRADER_PAPER_MAX_SNAPSHOT_AGE_SECONDS=1800`
 - minimum top-of-book available size: `RORY_TRADER_PAPER_MIN_AVAILABLE_SIZE=2`
+- settlement loop defaults: dry-run unless `--apply`, minimum age `RORY_TRADER_SETTLEMENT_MIN_AGE_HOURS=3`,
+  max market batch `RORY_TRADER_SETTLEMENT_MAX_MARKETS=50`, max positions per run
+  `RORY_TRADER_SETTLEMENT_MAX_POSITIONS=500`
 
 Verified archive on `2026-04-19`:
 - archive path: `runtime/quarantine/data.tar.zst`
@@ -151,6 +156,22 @@ uv run main.py resolve-paper <proposal_id> <won|lost|void> "source note"
 
 The command appends a `resolution` event, calculates realized PnL after commission, and leaves the original proposal
 and fill events untouched. Do not edit the journal by hand unless performing a documented incident repair.
+
+Automated paper settlement is allowed only for overdue Betfair paper positions where `listMarketBook` returns a
+`CLOSED` market and a settleable runner status. The settlement command is dry-run by default:
+
+```bash
+uv run main.py settle-paper
+uv run main.py settle-paper --apply --max-positions 500 --max-markets 50
+```
+
+The apply path appends `resolution` events only. It must not place, cancel, replace, or update live orders. The
+settlement timer should call the same command through `scripts/run-settlement-session.sh`, remain bounded by timeout
+and max-position settings, and be disable-able with:
+
+```bash
+sudo systemctl disable --now rory-trader-settlement.timer
+```
 
 ## Promotion Checklist For Any Future Live Mode
 

@@ -427,17 +427,12 @@ def performance_breakdown(store: DashboardStore | None = None) -> dict[str, Any]
 
 def recent_snapshot_collections(store: DashboardStore | None = None, limit: int = 8) -> list[dict[str, Any]]:
     store = store or DashboardStore()
-    events = JournalStore(path=store.journal_path).load_events()
-    snapshots: list[dict[str, Any]] = []
-    for row in reversed(events):
-        if row.get("event_type") != "snapshot_collection":
-            continue
+    snapshots: deque[dict[str, Any]] = deque(maxlen=limit)
+    for row in _iter_journal_events(store.journal_path, {"snapshot_collection"}):
         payload = dict(row.get("payload", {}))
         payload["recorded_at"] = row.get("recorded_at")
         snapshots.append(payload)
-        if len(snapshots) >= limit:
-            break
-    return snapshots
+    return list(reversed(snapshots))
 
 
 def strategy_context(category: str = "tennis", store: DashboardStore | None = None) -> dict[str, Any]:

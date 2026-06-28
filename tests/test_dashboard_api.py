@@ -183,6 +183,11 @@ def test_strategy_context_endpoint_explains_tennis_rules(monkeypatch, tmp_path):
     client = _client(monkeypatch, tmp_path)
     JournalStore().record_snapshot_collection(tmp_path / "snapshots.parquet", 25, "tennis")
 
+    def fail_full_journal_load(self):
+        raise AssertionError("strategy context should not parse the full journal")
+
+    monkeypatch.setattr("src.dashboard.service.JournalStore.load_events", fail_full_journal_load)
+
     response = client.get(
         "/api/dashboard/strategy-context",
         headers={"X-Rory-Dashboard-Token": "test-token"},
